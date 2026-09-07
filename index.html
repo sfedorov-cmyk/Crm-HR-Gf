@@ -2542,48 +2542,156 @@ async function renderResponses(){
   if(!wrap)return;
   wrap.classList.remove('hidden');
   const RECS=['Осипова А.','Кислякова Е.','Рачеева Д.','Степакова М.','Яковлева А.'];
+
   wrap.innerHTML=`<div style="padding:16px;max-width:1200px;margin:0 auto">
-    <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:16px">📥 Отклики с HH</div>
-    <div id="resp-wrap"></div>
+    <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:14px">📥 Отклики с HH</div>
+    <div id="resp-content" style="font-size:13px;color:var(--muted)">Загрузка...</div>
   </div>`;
 
-  const {data,error}=await sb.from('responses').select('*').order('created_at',{ascending:false});
-  const rows=data||[];
-  let html='';
+  const {data}=await sb.from('responses').select('*').order('created_at',{ascending:false});
+  const rows=(data||[]).filter(r=>r.recruiter && !['__marked__','__dup__'].includes(r.recruiter));
+
+  // Все дни с откликами (по убыванию)
+  const dayKey=r=>{
+    const d=r.created_at?new Date(r.created_at):new Date();
+    return d.toISOString().split('T')[0];
+  };
+  const daysSet=new Set(rows.map(dayKey));
+  const days=[...daysSet].sort().reverse();
+
+  if(days.length===0){
+    document.getElementById('resp-content').innerHTML=`<div style="background:var(--surface);border-radius:14px;padding:40px;text-align:center;color:var(--muted)">
+      <div style="font-size:40px;margin-bottom:10px">📭</div>
+      <div style="font-size:15px;font-weight:600">Откликов пока нет</div>
+    </div>`;
+    return;
+  }
+
+  // Выбранный день: сохранённый или последний
+  let sel=localStorage.getItem('resp_selected_day');
+  if(sel!=='ALL' && !daysSet.has(sel))sel=days[0];
+
+  const idx=days.indexOf(sel);
+  const prevDay=idx>=0&&idx<days.length-1?days[idx+1]:null; // старее
+  const nextDay=idx>0?days[idx-1]:null;                     // новее
+
+  const fdRu=s=>{const p=s.split('-');return p[2]+'.'+p[1]+'.'+p[0];};
+  const dayRows=sel==='ALL'?rows:rows.filter(r=>dayKey(r)===sel);
+
+  // Города за выбранный период
+  const byCity={};
+  for(const r of dayRows){const c=(r.city||'Не указан').trim()||'Не указан';byCity[c]=(byCity[c]||0)+1;}
+  const citySorted=Object.entries(byCity).sort((a,b)=>b[1]-a[1]);
+
+  let html=`
+    <!-- Фильтр по дням -->
+    <div style="background:var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px #0001">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button onclick="${prevDay?`selectRespDay('${prevDay}')`:''}" ${prevDay?'':'disabled'}
+          style="padding:7px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:14px;cursor:${prevDay?'pointer':'default'};opacity:${prevDay?'1':'0.35'}">←</button>
+
+        <div style="flex:1;min-width:150px;text-align:center">
+          <div style="font-size:17px;font-weight:700;color:var(--text)">${sel==='ALL'?'Все дни':fdRu(sel)}</div>
+          <div style="font-size:11px;color:var(--muted)">${dayRows.length} ${dayRows.length===1?'отклик':dayRows.length<5?'отклика':'откликов'}${sel==='ALL'?'':' · '+(idx+1)+' из '+days.length+' дней'}</div>
+        </div>
+
+        <button onclick="${nextDay?`selectRespDay('${nextDay}')`:''}" ${nextDay?'':'disabled'}
+          style="padding:7px 12px;border:1.5px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:14px;cursor:${nextDay?'pointer':'default'};opacity:${nextDay?'1':'0.35'}">→</button>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <select onchange="selectRespDay(this.value)" class="finput" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text);font-size:12px;font-family:inherit">
+          ${days.map(d=>`<option value="${d}"${sel===d?' selected':''}>${fdRu(d)} — ${rows.filter(r=>dayKey(r)===d).length} шт</option>`).join('')}
+        </select>
+        <button onclick="selectRespDay('ALL')" style="padding:6px 12px;border-radius:16px;border:1.5px solid ${sel==='ALL'?'var(--accent)':'var(--border)'};background:${sel==='ALL'?'var(--accent)':'var(--surface)'};color:${sel==='ALL'?'#fff':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer">Все дни (${rows.length})</button>
+        <button onclick="selectRespDay('${days[0]}')" style="padding:6px 12px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer">↻ Последний день</button>
+      </div>
+    </div>`;
+
+  // Города за период
+  if(citySorted.length>0){
+    const cc=['#248a3d','#2a78d6','#eb6834','#7e22ce','#0e7490','#b45309','#be185d','#4a3aa7'];
+    html+=`<div style="background:var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px #0001">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🗺️ По городам${sel==='ALL'?' (все дни)':' за '+fdRu(sel)}</div>
+      <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:10px">
+        ${citySorted.map(([c,n],i)=>`<div style="width:${(n/dayRows.length*100).toFixed(1)}%;background:${cc[i%cc.length]}" title="${c}: ${n}"></div>`).join('')}
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap">
+        ${citySorted.map(([c,n],i)=>`<span style="font-size:12px;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${cc[i%cc.length]};margin-right:5px"></span>${c} — <b>${n}</b> (${(n/dayRows.length*100).toFixed(0)}%)</span>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // Папки рекрутёров
+  const openFolders=JSON.parse(localStorage.getItem('resp_open_folders')||'[]');
 
   for(const rec of RECS){
-    const recRows=rows.filter(r=>r.recruiter===rec);
-    html+=`<div style="margin-bottom:24px;background:var(--card);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px #0001">
-      <div style="padding:12px 16px;background:var(--accent);color:#fff;font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:center">
-        <span>👤 ${rec}</span>
-        <button onclick="openAddResponse('${rec}')" style="background:#fff;color:var(--accent);border:none;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer">+ Добавить</button>
+    const recRows=dayRows.filter(r=>r.recruiter===rec);
+    const isOpen=openFolders.includes(rec)||recRows.length>0;
+    html+=`<div style="margin-bottom:12px;background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px #0001">
+      <div onclick="toggleRespFolder('${rec}')" style="padding:12px 16px;background:${recRows.length>0?'var(--accent)':'var(--border2)'};color:${recRows.length>0?'#fff':'var(--text)'};font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:10px">
+        <span style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:15px">${isOpen?'📂':'📁'}</span>
+          <span>${rec}</span>
+          <span style="background:${recRows.length>0?'rgba(255,255,255,.25)':'var(--muted)'};color:#fff;border-radius:12px;padding:1px 9px;font-size:12px;font-weight:700">${recRows.length}</span>
+        </span>
+        <button onclick="event.stopPropagation();openAddResponse('${rec}')" style="background:#fff;color:var(--accent);border:none;border-radius:8px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">+ Добавить</button>
       </div>
+      ${isOpen?`
       <table style="width:100%;border-collapse:collapse">
         <thead>
-          <tr style="background:var(--bg2);font-size:12px;color:var(--muted)">
+          <tr style="background:var(--bg);font-size:11px;color:var(--muted)">
+            <th style="padding:8px 12px;text-align:left;font-weight:600">Дата и время</th>
             <th style="padding:8px 12px;text-align:left;font-weight:600">ФИО кандидата</th>
             <th style="padding:8px 12px;text-align:left;font-weight:600">Телефон</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600">Ссылка на резюме</th>
-            <th style="padding:8px 12px;text-align:left;font-weight:600">Дата</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600">Город</th>
+            <th style="padding:8px 12px;text-align:left;font-weight:600">Резюме</th>
             <th style="padding:8px 12px;text-align:left;font-weight:600"></th>
           </tr>
         </thead>
         <tbody>
-          ${recRows.length===0?`<tr><td colspan="5" style="padding:12px;color:var(--muted);font-size:13px;text-align:center">Нет откликов</td></tr>`:
-            recRows.map(r=>`<tr style="border-top:1px solid var(--border);font-size:13px">
-              <td style="padding:8px 12px;color:var(--text);font-weight:500">${r.fio||'—'}</td>
-              <td style="padding:8px 12px;color:var(--text)">${r.tel||'—'}</td>
-              <td style="padding:8px 12px">${r.resume_url?`<a href="${r.resume_url}" target="_blank" style="color:var(--accent);text-decoration:none;font-size:12px">🔗 Резюме</a>`:'—'}</td>
-              <td style="padding:8px 12px;color:var(--muted);font-size:12px">${new Date(r.created_at).toLocaleDateString('ru')}</td>
-              <td style="padding:8px 12px"><button onclick="deleteResponse('${r.id}')" style="background:none;border:none;color:#ff3b30;cursor:pointer;font-size:16px" title="Удалить">🗑</button></td>
-            </tr>`).join('')
+          ${recRows.length===0
+            ? `<tr><td colspan="6" style="padding:14px;color:var(--muted);font-size:13px;text-align:center">Нет откликов${sel==='ALL'?'':' за '+fdRu(sel)}</td></tr>`
+            : recRows.map((r,i)=>{
+                const d=r.created_at?new Date(r.created_at):null;
+                return `<tr style="border-top:1px solid var(--border);font-size:13px;background:${i%2?'var(--bg)':'var(--surface)'}">
+                  <td style="padding:8px 12px;color:var(--muted);font-size:12px;white-space:nowrap">${d?d.toLocaleDateString('ru')+' '+d.toTimeString().slice(0,5):'—'}</td>
+                  <td style="padding:8px 12px;color:var(--text);font-weight:500">${r.fio||'—'}</td>
+                  <td style="padding:8px 12px;color:var(--text);white-space:nowrap">
+                    <span style="cursor:pointer" onclick="copyPhone('${(r.tel||'').replace(/'/g,'')}')" title="Копировать">${r.tel||'—'}</span>
+                    ${r.tel&&r.tel!=='—'?`<div style="display:flex;gap:4px;margin-top:4px">
+                      <a href="https://wa.me/${r.tel.replace(/[^0-9]/g,'')}" target="_blank" style="display:inline-flex;padding:2px 7px;background:none;color:#25d366;border:1.5px solid #25d366;border-radius:10px;font-size:11px;font-weight:600;text-decoration:none">💬 WA</a>
+                      <a href="https://t.me/+${r.tel.replace(/[^0-9]/g,'')}" target="_blank" onclick="copyTgMsg(this)" style="display:inline-flex;padding:2px 7px;background:none;color:#229ed9;border:1.5px solid #229ed9;border-radius:10px;font-size:11px;font-weight:600;text-decoration:none">✈️ TG</a>
+                    </div>`:''}
+                  </td>
+                  <td style="padding:8px 12px;color:var(--muted);font-size:12px">${r.city||'—'}</td>
+                  <td style="padding:8px 12px">${r.resume_url?`<a href="${r.resume_url}" target="_blank" style="color:var(--accent);text-decoration:none;font-size:12px;font-weight:600">🔗 Резюме</a>`:'—'}</td>
+                  <td style="padding:8px 12px"><button onclick="deleteResponse('${r.id}')" style="background:none;border:none;color:#ff3b30;cursor:pointer;font-size:15px" title="Удалить">🗑</button></td>
+                </tr>`;
+              }).join('')
           }
         </tbody>
-      </table>
+      </table>`:''}
     </div>`;
   }
-  document.getElementById('resp-wrap').innerHTML=html;
+
+  document.getElementById('resp-content').innerHTML=html;
 }
+
+function selectRespDay(d){
+  localStorage.setItem('resp_selected_day',d);
+  renderResponses();
+}
+
+function toggleRespFolder(rec){
+  const open=JSON.parse(localStorage.getItem('resp_open_folders')||'[]');
+  const i=open.indexOf(rec);
+  if(i>=0)open.splice(i,1);else open.push(rec);
+  localStorage.setItem('resp_open_folders',JSON.stringify(open));
+  renderResponses();
+}
+window.selectRespDay=selectRespDay;
+window.toggleRespFolder=toggleRespFolder;
 
 function openAddResponse(rec){
   const modal=document.createElement('div');
@@ -2903,7 +3011,7 @@ async function syncHHResponses(btn, silent=false){
     // 1. Получаем все активные вакансии
     
     // Фиксированный список вакансий
-    const VACANCY_IDS=['135190090','135396085','134258152','134259761','135609850','136362321','136362427','136682498','136769963'];
+    const VACANCY_IDS=['135190090','135396085','134258152','134259761','135609850','136362321','136362427','136682498','136769963','136456137','137040383','137040724','137041021'];
     const vacancies=VACANCY_IDS.map(id=>({id}));
     
     log.textContent=`📋 Найдено вакансий: ${vacancies.length}`;
@@ -2940,6 +3048,7 @@ async function syncHHResponses(btn, silent=false){
         const fio=[resume.last_name,resume.first_name,resume.middle_name].filter(Boolean).join(' ')||'—';
         const tel=resume.contact?.find(c=>c.type?.id==='cell')?.value||'—';
         const resumeUrl=resume.alternate_url||'';
+        const respCity=resume.area?.name||'Не указан';
 
         // Убираем дубли по телефону ВНУТРИ этой загрузки
         const phoneKey=tel.replace(/[^0-9]/g,'');
@@ -2949,7 +3058,7 @@ async function syncHHResponses(btn, silent=false){
         }
         if(phoneKey)seenPhones.add(phoneKey);
 
-        allCandidates.push({hhId,fio,tel,resumeUrl});
+        allCandidates.push({hhId,fio,tel,resumeUrl,respCity});
         existingIds.add(hhId);
       }
     }
@@ -2962,7 +3071,7 @@ async function syncHHResponses(btn, silent=false){
         const {data:existTel}=await sb.from('candidates').select('id').eq('tel',cand.tel).limit(1);
         if(existTel && existTel.length>0){
           // Дубль в базе — сохраняем только в responses без создания записи
-          await sb.from('responses').insert({recruiter:'__dup__',fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId});
+          await sb.from('responses').insert({recruiter:'__dup__',fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId,city:cand.respCity});
           continue;
         }
       }
@@ -2971,7 +3080,7 @@ async function syncHHResponses(btn, silent=false){
       qIdx++;
 
       await sb.from('responses').insert({
-        recruiter:rec,fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId
+        recruiter:rec,fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId,city:cand.respCity
       });
 
       await sb.from('candidates').insert({
@@ -2979,7 +3088,7 @@ async function syncHHResponses(btn, silent=false){
         time:today.toTimeString().slice(0,5),
         fio:cand.fio||'—',
         tel:cand.tel||'—',
-        okrug:'—',da:'—',status:'—',jur:'—',city:'—',
+        okrug:'—',da:'—',status:'—',jur:'—',city:cand.respCity||'—',
         comment:cand.resumeUrl ? `Отклик с HH: ${cand.resumeUrl}` : 'Отклик с HH',
         recruiter:rec
       });
@@ -3034,7 +3143,7 @@ async function markAllExistingAsLoaded(btn){
   try {
     // Получаем все активные вакансии
     // Фиксированный список вакансий
-    const VACANCY_IDS=['135190090','135396085','134258152','134259761','135609850','136362321','136362427','136682498','136769963'];
+    const VACANCY_IDS=['135190090','135396085','134258152','134259761','135609850','136362321','136362427','136682498','136769963','136456137','137040383','137040724','137041021'];
     const vacancies=VACANCY_IDS.map(id=>({id}));
     
 
