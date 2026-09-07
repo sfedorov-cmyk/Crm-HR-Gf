@@ -2882,6 +2882,9 @@ async function renderHH(){
         <button onclick="resetQueue()" style="background:none;border:1.5px solid var(--border);color:var(--text);border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer">
           ↺ Сбросить очередь
         </button>
+        <button onclick="localStorage.removeItem('hh_sync_lock');HH_SYNC_RUNNING=false;alert('Блокировка снята');renderHH()" style="background:none;border:1.5px solid var(--border);color:var(--muted);border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer">
+          🔓 Снять блокировку
+        </button>
         <button onclick="markAllExistingAsLoaded(this)" ${!hasToken||tokenExpired?'disabled':''} style="background:none;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer;opacity:${!hasToken||tokenExpired?'0.5':'1'}">
           📌 Пометить все текущие как загруженные
         </button>
@@ -3057,6 +3060,7 @@ async function syncHHResponses(btn, silent=false){
     let qIdx=await getQueueIndex();
 
     // 4. Собираем ВСЕ отклики со всех вакансий
+    const syncErrors=[];
     const allCandidates=[];
     const seenPhones=new Set();
 
@@ -3114,12 +3118,25 @@ async function syncHHResponses(btn, silent=false){
       const rec=ACTIVE_RECS_HH[qIdx % ACTIVE_RECS_HH.length];
       qIdx++;
 
-      const {error:insErr}=await sb.from('responses').insert({
+      let {error:insErr}=await sb.from('responses').insert({
         recruiter:rec,fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId,city:cand.respCity
       });
-      if(insErr){qIdx--;continue;} // уникальный индекс отбил дубль — откатываем очередь
+      // Если упало из-за отсутствующей колонки city — пробуем без неё
+      if(insErr && /city/i.test(insErr.message||'')){
+        const retry=await sb.from('responses').insert({
+          recruiter:rec,fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId
+        });
+        insErr=retry.error;
+      }
+      if(insErr){
+        // Дубль по уникальному индексу — тихо пропускаем, очередь откатываем
+        if(/duplicate|unique/i.test(insErr.message||'')){qIdx--;continue;}
+        // Любая другая ошибка — показываем и прекращаем, чтобы не терять отклики молча
+        syncErrors.push(insErr.message);
+        qIdx--;continue;
+      }
 
-      await sb.from('candidates').insert({
+      const {error:candErr}=await sb.from('candidates').insert({
         date:today.toISOString().split('T')[0],
         time:today.toTimeString().slice(0,5),
         fio:cand.fio||'—',
@@ -3128,6 +3145,7 @@ async function syncHHResponses(btn, silent=false){
         comment:cand.resumeUrl ? `Отклик с HH: ${cand.resumeUrl}` : 'Отклик с HH',
         recruiter:rec
       });
+      if(candErr)syncErrors.push('candidates: '+candErr.message);
 
       totalNew++;
     }
@@ -3136,8 +3154,10 @@ async function syncHHResponses(btn, silent=false){
     await saveQueueIndex(qIdx);
 
     HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');
+    if(syncErrors.length>0)console.error('HH sync errors:',syncErrors);
     if(!silent){
-      log.innerHTML=`✅ Готово! Загружено новых откликов: <b>${totalNew}</b>`;
+      log.innerHTML=`✅ Готово! Загружено новых откликов: <b>${totalNew}</b>`
+        +(syncErrors.length>0?`<div style="color:#b91c1c;margin-top:6px;font-size:11px">⚠️ Ошибок: ${syncErrors.length}<br>${syncErrors[0]}</div>`:'');
       btn.textContent='🔄 Загрузить новые отклики';
       btn.disabled=false;
     } else if(totalNew>0){
