@@ -3000,20 +3000,33 @@ async function refreshHHToken(){
 }
 
 // Синхронизация откликов
+let HH_SYNC_RUNNING=false;
 async function syncHHResponses(btn, silent=false){
-  const log=document.getElementById('hh-sync-log');
+  // Защита от параллельного запуска
+  if(HH_SYNC_RUNNING){
+    if(!silent&&btn){btn.textContent='🔄 Загрузить новые отклики';btn.disabled=false;}
+    return;
+  }
+  const lockRaw=localStorage.getItem('hh_sync_lock');
+  if(lockRaw && Date.now()-parseInt(lockRaw)<120000){
+    if(!silent){const l=document.getElementById('hh-sync-log');if(l)l.textContent='⏳ Синхронизация уже идёт — подожди минуту';if(btn){btn.textContent='🔄 Загрузить новые отклики';btn.disabled=false;}}
+    return;
+  }
+  HH_SYNC_RUNNING=true;
+  localStorage.setItem('hh_sync_lock',String(Date.now()));
+  const log=document.getElementById('hh-sync-log')||{textContent:'',innerHTML:''};
   if(!silent){btn.disabled=true;btn.textContent='⏳ Загружаю...';}
 
   let settings=await getHHSettings();
 
   // Проверяем токен
-  if(!settings.access_token){log.textContent='❌ Нет токена — авторизуйся сначала';btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';return;}
+  if(!settings.access_token){HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');if(!silent&&log){log.textContent='❌ Нет токена — авторизуйся сначала';}if(btn){btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';}return;}
 
   // Обновляем токен если истёк
   if(settings.expires_at && Date.now()>settings.expires_at){
     log.textContent='🔄 Обновляю токен...';
     const ok=await refreshHHToken();
-    if(!ok){log.textContent='❌ Токен истёк — нужна повторная авторизация';btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';return;}
+    if(!ok){HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');if(!silent&&log){log.textContent='❌ Токен истёк — нужна повторная авторизация';}if(btn){btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';}return;}
     settings=await getHHSettings();
   }
 
@@ -3029,11 +3042,16 @@ async function syncHHResponses(btn, silent=false){
     
     log.textContent=`📋 Найдено вакансий: ${vacancies.length}`;
 
-    if(vacancies.length===0){log.textContent='ℹ️ Активных вакансий не найдено';btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';return;}
+    if(vacancies.length===0){HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');if(!silent&&log){log.textContent='ℹ️ Активных вакансий не найдено';}if(btn){btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';}return;}
 
     // 2. Получаем уже загруженные отклики из нашей БД
-    const {data:existingResps}=await sb.from('responses').select('hh_id').not('hh_id','is',null);
-    const existingIds=new Set((existingResps||[]).map(r=>r.hh_id));
+    const existingIds=new Set();
+    for(let page=0;page<20;page++){
+      const {data:chunk}=await sb.from('responses').select('hh_id').not('hh_id','is',null).range(page*1000,page*1000+999);
+      if(!chunk||chunk.length===0)break;
+      chunk.forEach(r=>existingIds.add(String(r.hh_id)));
+      if(chunk.length<1000)break;
+    }
 
     // 3. Получаем индекс очереди
     let qIdx=await getQueueIndex();
@@ -3089,12 +3107,17 @@ async function syncHHResponses(btn, silent=false){
         }
       }
 
+      // Контрольная проверка прямо перед вставкой — вдруг успела попасть из другой сессии
+      const {data:dblCheck}=await sb.from('responses').select('id').eq('hh_id',cand.hhId).limit(1);
+      if(dblCheck && dblCheck.length>0)continue;
+
       const rec=ACTIVE_RECS_HH[qIdx % ACTIVE_RECS_HH.length];
       qIdx++;
 
-      await sb.from('responses').insert({
+      const {error:insErr}=await sb.from('responses').insert({
         recruiter:rec,fio:cand.fio,tel:cand.tel,resume_url:cand.resumeUrl,hh_id:cand.hhId,city:cand.respCity
       });
+      if(insErr){qIdx--;continue;} // уникальный индекс отбил дубль — откатываем очередь
 
       await sb.from('candidates').insert({
         date:today.toISOString().split('T')[0],
@@ -3112,6 +3135,7 @@ async function syncHHResponses(btn, silent=false){
     // Сохраняем обновлённый индекс очереди
     await saveQueueIndex(qIdx);
 
+    HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');
     if(!silent){
       log.innerHTML=`✅ Готово! Загружено новых откликов: <b>${totalNew}</b>`;
       btn.textContent='🔄 Загрузить новые отклики';
@@ -3127,8 +3151,9 @@ async function syncHHResponses(btn, silent=false){
     if(totalNew>0)setTimeout(()=>renderHH(),1000);
 
   } catch(e){
-    log.textContent='❌ Ошибка: '+e.message;
-    btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';
+    HH_SYNC_RUNNING=false;localStorage.removeItem('hh_sync_lock');
+    if(!silent&&log)log.textContent='❌ Ошибка: '+e.message;
+    if(btn){btn.disabled=false;btn.textContent='🔄 Загрузить новые отклики';}
   }
 }
 
@@ -3137,7 +3162,7 @@ async function markAllExistingAsLoaded(btn){
   if(!confirm('Система запомнит все текущие отклики на HH как уже обработанные.\nПосле этого будут загружаться только НОВЫЕ отклики.\n\nПродолжить?'))return;
 
   if(!silent){btn.disabled=true;btn.textContent='⏳ Загружаю...';}
-  const log=document.getElementById('hh-sync-log');
+  const log=document.getElementById('hh-sync-log')||{textContent:'',innerHTML:''};
   
 
   let settings=await getHHSettings();
@@ -3277,13 +3302,14 @@ window.exportToExcel=exportToExcel;
 // ========== АВТО-СИНХРОНИЗАЦИЯ HH ==========
 async function autoSyncHH(){
   try {
+    if(!isAdmin)return; // синхронизирует только администратор
     const settings=await getHHSettings();
-    if(!settings.access_token)return; // нет токена — не синхронизируем
+    if(!settings.access_token)return;
     if(settings.expires_at && Date.now()>settings.expires_at){
       const ok=await refreshHHToken();
       if(!ok)return;
     }
-    await syncHHResponses(null, true); // silent mode
+    await syncHHResponses(null, true);
   } catch(e){
     console.log('Авто-синхронизация HH:', e.message);
   }
