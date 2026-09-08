@@ -2549,14 +2549,15 @@ async function renderResponses(){
   </div>`;
 
   const {data}=await sb.from('responses').select('*').order('created_at',{ascending:false});
-  const rows=(data||[]).filter(r=>r.recruiter && !['__marked__','__dup__'].includes(r.recruiter));
+  const allRows=(data||[]).filter(r=>r.recruiter && r.recruiter!=='__marked__');
+  const rows=allRows.filter(r=>r.recruiter!=='__dup__');
 
   // Все дни с откликами (по убыванию)
   const dayKey=r=>{
     const d=r.created_at?new Date(r.created_at):new Date();
     return d.toISOString().split('T')[0];
   };
-  const daysSet=new Set(rows.map(dayKey));
+  const daysSet=new Set(allRows.map(dayKey));
   const days=[...daysSet].sort().reverse();
 
   if(days.length===0){
@@ -2577,10 +2578,12 @@ async function renderResponses(){
 
   const fdRu=s=>{const p=s.split('-');return p[2]+'.'+p[1]+'.'+p[0];};
   const dayRows=sel==='ALL'?rows:rows.filter(r=>dayKey(r)===sel);
+  const dayAll=sel==='ALL'?allRows:allRows.filter(r=>dayKey(r)===sel);
+  const dayDups=dayAll.filter(r=>r.recruiter==='__dup__');
 
   // Города за выбранный период
   const byCity={};
-  for(const r of dayRows){const c=(r.city||'Не указан').trim()||'Не указан';byCity[c]=(byCity[c]||0)+1;}
+  for(const r of dayAll){const c=(r.city||'Не указан').trim()||'Не указан';byCity[c]=(byCity[c]||0)+1;}
   const citySorted=Object.entries(byCity).sort((a,b)=>b[1]-a[1]);
 
   let html=`
@@ -2592,7 +2595,8 @@ async function renderResponses(){
 
         <div style="flex:1;min-width:150px;text-align:center">
           <div style="font-size:17px;font-weight:700;color:var(--text)">${sel==='ALL'?'Все дни':fdRu(sel)}</div>
-          <div style="font-size:11px;color:var(--muted)">${dayRows.length} ${dayRows.length===1?'отклик':dayRows.length<5?'отклика':'откликов'}${sel==='ALL'?'':' · '+(idx+1)+' из '+days.length+' дней'}</div>
+          <div style="font-size:11px;color:var(--muted)">всего ${dayAll.length} ${dayAll.length===1?'отклик':dayAll.length<5?'отклика':'откликов'}${sel==='ALL'?'':' · '+(idx+1)+' из '+days.length+' дней'}</div>
+          <div style="font-size:11px;margin-top:2px"><span style="color:var(--accent);font-weight:700">${dayRows.length} распределено</span>${dayDups.length>0?` · <span style="color:#eb6834;font-weight:700">${dayDups.length} повторных</span>`:''}</div>
           <div style="font-size:11px;margin-top:2px"><span style="color:#15803d;font-weight:700">✅ ${dayRows.filter(r=>r.processed).length} обработано</span> · <span style="color:var(--muted)">${dayRows.filter(r=>!r.processed).length} в работе</span></div>
         </div>
 
@@ -2602,9 +2606,9 @@ async function renderResponses(){
 
       <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
         <select onchange="selectRespDay(this.value)" class="finput" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:9px;background:var(--bg);color:var(--text);font-size:12px;font-family:inherit">
-          ${days.map(d=>`<option value="${d}"${sel===d?' selected':''}>${fdRu(d)} — ${rows.filter(r=>dayKey(r)===d).length} шт</option>`).join('')}
+          ${days.map(d=>`<option value="${d}"${sel===d?' selected':''}>${fdRu(d)} — ${allRows.filter(r=>dayKey(r)===d).length} шт</option>`).join('')}
         </select>
-        <button onclick="selectRespDay('ALL')" style="padding:6px 12px;border-radius:16px;border:1.5px solid ${sel==='ALL'?'var(--accent)':'var(--border)'};background:${sel==='ALL'?'var(--accent)':'var(--surface)'};color:${sel==='ALL'?'#fff':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer">Все дни (${rows.length})</button>
+        <button onclick="selectRespDay('ALL')" style="padding:6px 12px;border-radius:16px;border:1.5px solid ${sel==='ALL'?'var(--accent)':'var(--border)'};background:${sel==='ALL'?'var(--accent)':'var(--surface)'};color:${sel==='ALL'?'#fff':'var(--text)'};font-size:12px;font-weight:600;cursor:pointer">Все дни (${allRows.length})</button>
         <button onclick="selectRespDay('${days[0]}')" style="padding:6px 12px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-weight:600;cursor:pointer">↻ Последний день</button>
       </div>
     </div>`;
@@ -2615,10 +2619,10 @@ async function renderResponses(){
     html+=`<div style="background:var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px #0001">
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">🗺️ По городам${sel==='ALL'?' (все дни)':' за '+fdRu(sel)}</div>
       <div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin-bottom:10px">
-        ${citySorted.map(([c,n],i)=>`<div style="width:${(n/dayRows.length*100).toFixed(1)}%;background:${cc[i%cc.length]}" title="${c}: ${n}"></div>`).join('')}
+        ${citySorted.map(([c,n],i)=>`<div style="width:${(n/dayAll.length*100).toFixed(1)}%;background:${cc[i%cc.length]}" title="${c}: ${n}"></div>`).join('')}
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap">
-        ${citySorted.map(([c,n],i)=>`<span style="font-size:12px;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${cc[i%cc.length]};margin-right:5px"></span>${c} — <b>${n}</b> (${(n/dayRows.length*100).toFixed(0)}%)</span>`).join('')}
+        ${citySorted.map(([c,n],i)=>`<span style="font-size:12px;color:var(--text)"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${cc[i%cc.length]};margin-right:5px"></span>${c} — <b>${n}</b> (${(n/dayAll.length*100).toFixed(0)}%)</span>`).join('')}
       </div>
     </div>`;
   }
@@ -2786,6 +2790,11 @@ async function hhFetch(url, token, method, body) {
 
 // =================== HH.ru ИНТЕГРАЦИЯ ===================
 
+// ===== ПЕРЕКЛЮЧАТЕЛЬ ИНТЕГРАЦИИ С HH =====
+// false = интеграция полностью отключена (авто-синк и кнопки не работают)
+// true  = интеграция включена
+const HH_INTEGRATION_ENABLED = false;
+// ==========================================
 const HH_REDIRECT = 'https://sfedorov-cmyk.github.io/crm-log-gf/';
 const HH_SCOPE = 'employer_negotiations';
 const ACTIVE_RECS_HH = ['Осипова А.','Кислякова Е.','Рачеева Д.','Степакова М.','Яковлева А.'];
@@ -2837,7 +2846,12 @@ async function renderHH(){
 
   wrap.innerHTML=`<div style="padding:20px;max-width:700px;margin:0 auto">
     <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px">🔗 Интеграция с HH.ru</div>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Автоматическое распределение откликов между рекрутёрами</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Автоматическое распределение откликов между рекрутёрами</div>
+
+    ${!HH_INTEGRATION_ENABLED?`<div style="background:#fff3cd;border:1.5px solid #f59e0b;border-radius:12px;padding:14px 16px;margin-bottom:20px">
+      <div style="font-size:14px;font-weight:700;color:#92400e">⏸ Интеграция временно отключена</div>
+      <div style="font-size:12px;color:#b45309;margin-top:4px">Авто-синхронизация и кнопки загрузки не работают. Отклики, которые уже в базе, остались на месте — вкладка «Отклики» работает как обычно.</div>
+    </div>`:''}
 
     <!-- Блок настроек -->
     <div style="background:var(--card);border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px #0001">
@@ -2876,7 +2890,7 @@ async function renderHH(){
       <div style="font-size:13px;color:var(--muted);margin-bottom:4px">Следующий отклик уйдёт: <b style="color:var(--accent)">${nextRec}</b></div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Очерёдность: ${ACTIVE_RECS_HH.map((r,i)=>`<span style="color:${i===qIdx%ACTIVE_RECS_HH.length?'var(--accent)':'var(--muted)'};font-weight:${i===qIdx%ACTIVE_RECS_HH.length?'700':'400'}">${r}</span>`).join(' → ')}</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button onclick="syncHHResponses(this)" ${!hasToken||tokenExpired?'disabled':''} style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;opacity:${!hasToken||tokenExpired?'0.5':'1'}">
+        <button onclick="syncHHResponses(this)" ${!HH_INTEGRATION_ENABLED||!hasToken||tokenExpired?'disabled':''} style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;opacity:${!HH_INTEGRATION_ENABLED||!hasToken||tokenExpired?'0.4':'1'}">
           🔄 Загрузить новые отклики
         </button>
         <button onclick="resetQueue()" style="background:none;border:1.5px solid var(--border);color:var(--text);border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer">
@@ -2885,7 +2899,7 @@ async function renderHH(){
         <button onclick="localStorage.removeItem('hh_sync_lock');HH_SYNC_RUNNING=false;alert('Блокировка снята');renderHH()" style="background:none;border:1.5px solid var(--border);color:var(--muted);border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer">
           🔓 Снять блокировку
         </button>
-        <button onclick="markAllExistingAsLoaded(this)" ${!hasToken||tokenExpired?'disabled':''} style="background:none;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer;opacity:${!hasToken||tokenExpired?'0.5':'1'}">
+        <button onclick="markAllExistingAsLoaded(this)" ${!HH_INTEGRATION_ENABLED||!hasToken||tokenExpired?'disabled':''} style="background:none;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:10px;padding:10px 16px;font-size:13px;cursor:pointer;opacity:${!hasToken||tokenExpired?'0.5':'1'}">
           📌 Пометить все текущие как загруженные
         </button>
       </div>
@@ -2918,6 +2932,7 @@ async function saveHHKeys(){
 
 // Авторизация через HH
 async function startHHAuth(){
+  if(!HH_INTEGRATION_ENABLED){alert('⏸ Интеграция с HH временно отключена');return;}
   const settings=await getHHSettings();
   if(!settings.client_id){alert('Сначала сохрани client_id');return;}
   const state=Math.random().toString(36).slice(2);
@@ -2928,6 +2943,7 @@ async function startHHAuth(){
 
 // Обработка callback после авторизации HH
 async function handleHHCallback(){
+  if(!HH_INTEGRATION_ENABLED)return;
   const params=new URLSearchParams(window.location.search);
   const code=params.get('code');
   const state=params.get('state');
@@ -3005,6 +3021,14 @@ async function refreshHHToken(){
 // Синхронизация откликов
 let HH_SYNC_RUNNING=false;
 async function syncHHResponses(btn, silent=false){
+  if(!HH_INTEGRATION_ENABLED){
+    if(!silent){
+      const l=document.getElementById('hh-sync-log');
+      if(l)l.textContent='⏸ Интеграция с HH временно отключена';
+      if(btn){btn.textContent='🔄 Загрузить новые отклики';btn.disabled=false;}
+    }
+    return;
+  }
   // Защита от параллельного запуска
   if(HH_SYNC_RUNNING){
     if(!silent&&btn){btn.textContent='🔄 Загрузить новые отклики';btn.disabled=false;}
@@ -3179,6 +3203,11 @@ async function syncHHResponses(btn, silent=false){
 
 // Пометить все текущие отклики как загруженные (без распределения)
 async function markAllExistingAsLoaded(btn){
+  if(!HH_INTEGRATION_ENABLED){
+    const l=document.getElementById('hh-sync-log');
+    if(l)l.textContent='⏸ Интеграция с HH временно отключена';
+    return;
+  }
   if(!confirm('Система запомнит все текущие отклики на HH как уже обработанные.\nПосле этого будут загружаться только НОВЫЕ отклики.\n\nПродолжить?'))return;
 
   if(!silent){btn.disabled=true;btn.textContent='⏳ Загружаю...';}
@@ -3322,6 +3351,7 @@ window.exportToExcel=exportToExcel;
 // ========== АВТО-СИНХРОНИЗАЦИЯ HH ==========
 async function autoSyncHH(){
   try {
+    if(!HH_INTEGRATION_ENABLED)return; // интеграция отключена
     if(!isAdmin)return; // синхронизирует только администратор
     const settings=await getHHSettings();
     if(!settings.access_token)return;
