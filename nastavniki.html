@@ -118,6 +118,9 @@ body,html{font-family:'DM Sans',-apple-system,sans-serif;background:var(--bg);co
 .table-wrap{flex:1;overflow:auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 thead{position:sticky;top:0;z-index:2}
+.th-sort{cursor:pointer;user-select:none}
+.th-sort:hover{color:var(--gold)}
+.sort-i{color:var(--gold);font-size:11px}
 th{background:var(--bg3);border-bottom:1px solid var(--border);padding:10px 12px;text-align:left;font-weight:600;font-size:10px;color:var(--gold-dim);white-space:nowrap;text-transform:uppercase;letter-spacing:.8px}
 td{border-bottom:1px solid var(--border);padding:10px 12px;vertical-align:middle;transition:background .1s}
 tr.s-works td{background:rgba(45,106,79,.06)!important}
@@ -208,7 +211,7 @@ tr:hover td{background:var(--bg3)!important}
 
 /* STATUS DROPDOWN */
 .status-dropdown-wrap{position:relative;display:inline-block}
-.status-menu{position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:4px;z-index:100;min-width:160px;box-shadow:var(--shm);animation:fadeIn .15s ease}
+.status-menu{position:absolute;top:calc(100% + 4px);left:0;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:4px;z-index:100;min-width:160px;box-shadow:var(--sh-gold);animation:fadeIn .15s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
 .status-menu-item{padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;margin-bottom:2px;display:flex;align-items:center;gap:6px;transition:filter .1s}
 .status-menu-item::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
@@ -229,6 +232,11 @@ tr:hover td{background:var(--bg3)!important}
 .inline-select:hover{background:var(--gold-bg)!important}
 /* OKRUG */
 .okrug-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:500;background:var(--gold-bg);color:var(--gold);border:1px solid var(--gold-dim);opacity:.8}
+.okrug-tag.bad{background:var(--red-bg);color:var(--red-text);border-color:var(--red-text);opacity:1}
+/* ОТЛОЖЕННОЕ ОБНОВЛЕНИЕ */
+.stale-note{position:fixed;bottom:20px;right:20px;background:var(--gold);color:#0f0f0f;padding:8px 16px;border-radius:20px;
+  font-size:12px;font-weight:700;z-index:150;cursor:pointer;box-shadow:var(--sh);display:none}
+.stale-note.show{display:block}
 
 /* MOBILE */
 @media(max-width:700px){
@@ -244,10 +252,9 @@ tr:hover td{background:var(--bg3)!important}
   .fs-note{max-width:150px}
   /* Скрываем таблицу на мобиле */
   .table-wrap{display:none!important}
-  /* Показываем карточки */
+  /* Показываем карточки — но только в режиме "Таблица" (см. .cards-off) */
   .mobile-cards{display:flex!important}
-  /* Топбар кнопки */
-  #viewTableBtn,#viewReportBtn{display:none}
+  .mobile-cards.cards-off{display:none!important}
 }
 @media(min-width:701px){
   .mobile-cards{display:none!important}
@@ -288,7 +295,10 @@ tr:hover td{background:var(--bg3)!important}
     <div class="topbar-right">
       <div class="sync-dot" id="syncDot"></div>
       <span class="sync-label" id="syncStatus">онлайн</span>
+      <span class="sync-label" id="actorLabel" onclick="setActor()" title="Кто работает — попадает в журнал изменений" style="cursor:pointer;border-bottom:1px dotted var(--border2)"></span>
       <button class="btn" id="themeBtn" onclick="toggleTheme()" title="Переключить тему" style="font-size:16px;padding:5px 10px">🌙</button>
+      <button class="btn" id="refreshBtn" onclick="manualRefresh()" title="Обновить данные и подтянуть новых из CRM">🔄 Обновить</button>
+      <button class="btn" id="reportBtn" onclick="showSyncReport(lastSyncReport())" title="Что сделала последняя синхронизация">📋 Отчёт синка</button>
       <button class="btn" id="pasteBtn" onclick="pasteRecord()" title="Вставить из буфера">📋 Вставить</button>
       <button class="btn btn-gold" id="addBtn">+ Запись</button>
     </div>
@@ -320,8 +330,8 @@ tr:hover td{background:var(--bg3)!important}
   </div>
 
   <div class="toolbar">
-    <input type="text" class="finput" id="searchInput" placeholder="Поиск по ФИО или наставнику..." style="width:230px" oninput="renderTable()">
-    <select class="finput" id="filterStatus" onchange="renderTable()">
+    <input type="text" class="finput" id="searchInput" placeholder="Поиск по ФИО или наставнику..." style="width:230px" oninput="renderAll()">
+    <select class="finput" id="filterStatus" onchange="renderAll()">
       <option value="">Все статусы</option>
       <option value="handed">Передан наставнику</option>
       <option value="learning">Обучен, но не вышел</option>
@@ -331,18 +341,18 @@ tr:hover td{background:var(--bg3)!important}
       <option value="block">Блок. Причина</option>
       <option value="other">Иное</option>
     </select>
-    <select class="finput" id="filterNastavnik" onchange="renderTable()">
+    <select class="finput" id="filterNastavnik" onchange="renderAll()">
       <option value="">Все наставники</option>
     </select>
-    <select class="finput" id="filterFirstShift" onchange="renderTable()">
+    <select class="finput" id="filterFirstShift" onchange="renderAll()">
       <option value="">Первый выход: все</option>
       <option value="pending">На подтверждении</option>
       <option value="approved">Подтверждён</option>
       <option value="rejected">Отказ</option>
     </select>
     <span style="font-size:11px;color:var(--text2)">Период:</span>
-    <input type="date" class="finput" id="dateFrom" onchange="renderTable()">
-    <input type="date" class="finput" id="dateTo" onchange="renderTable()">
+    <input type="date" class="finput" id="dateFrom" onchange="renderAll()">
+    <input type="date" class="finput" id="dateTo" onchange="renderAll()">
     <button class="btn" onclick="clearFilters()">Сбросить</button>
   </div>
 
@@ -358,16 +368,16 @@ tr:hover td{background:var(--bg3)!important}
       <thead>
         <tr>
           <th style="width:36px"><input type="checkbox" id="checkAll" onclick="toggleAll(this)" style="accent-color:var(--gold);width:15px;height:15px;cursor:pointer"></th>
-          <th>Дата аккаунта</th>
-          <th>Дата выхода</th>
-          <th>ФИО курьера</th>
+          <th class="th-sort" onclick="setSort('date_account')">Дата аккаунта <span class="sort-i" id="si-date_account"></span></th>
+          <th class="th-sort" onclick="setSort('date_first_shift')">Дата выхода <span class="sort-i" id="si-date_first_shift"></span></th>
+          <th class="th-sort" onclick="setSort('name')">ФИО курьера <span class="sort-i" id="si-name"></span></th>
           <th>Округ</th>
           <th>Наставник</th>
           <th>Статус</th>
           <th>Номер тел</th>
           <th>Комментарий</th>
           <th style="min-width:210px">Первый выход</th>
-          <th style="text-align:center">Смен</th>
+          <th style="text-align:center" class="th-sort" onclick="setSort('smeny')">Смен <span class="sort-i" id="si-smeny"></span></th>
           <th style="text-align:center">Сумма</th>
           <th>Бонус</th>
           <th></th>
@@ -397,6 +407,8 @@ tr:hover td{background:var(--bg3)!important}
   </div>
 </div>
 
+<div class="stale-note" id="staleNote" onclick="applyStale()">🔄 Есть новые данные — нажми, чтобы обновить</div>
+
 <!-- MODAL -->
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -414,8 +426,8 @@ tr:hover td{background:var(--bg3)!important}
     <div class="fg"><label>Округ</label>
       <select id="fOkrug" onchange="autoFillNastavnik()">
         <option value="">—</option>
-        <optgroup label="СПБ"><option>ЮЗ</option><option>ЮВ</option><option>СЗ</option><option>СВ</option><option>Восток</option><option>Центр</option></optgroup>
-        <optgroup label="МСК"><option>САО</option><option>СВАО</option><option>СЗАО</option><option>ВАО</option><option>ЮАО</option><option>ЮВАО</option><option>ЮЗАО</option><option>ЗАО</option><option>ЦАО</option></optgroup>
+        <optgroup label="СПБ"><option>ЮЗ</option><option>ЮВ</option><option>СЗ</option><option>СВ</option><option>Восток</option></optgroup>
+        <optgroup label="МСК"><option>САО</option><option>СВАО</option><option>СЗАО</option><option>ВАО</option><option>ЮАО</option><option>ЮВАО</option><option>ЮЗАО</option><option>ЗАО</option></optgroup>
       </select>
     </div>
     <div class="fg"><label>Наставник</label><input type="text" id="fNastavnik" placeholder="Фамилия наставника"></div>
@@ -423,6 +435,7 @@ tr:hover td{background:var(--bg3)!important}
     <div class="fg"><label>Статус</label>
       <select id="fStatus">
         <option value="handed">Передан наставнику</option>
+        <option value="learning">Обучен, но не вышел</option>
         <option value="works">Работает</option>
         <option value="coming">Выйдет. Дата</option>
         <option value="nodial">Недозвон. Дата</option>
@@ -474,7 +487,7 @@ const NASTAVNIK_MAP={
   spb:{
     'ЮЗ':'Лабузов Дмитрий',
     'ЮВ':'Степанова Ольга',
-    'Восток':'Штоколов Николай',
+    'Восток':'Пинчук Виктор',
     'СВ':'Пинчук Виктор',
     'СЗ':'Шорохов Максим'
   },
@@ -491,7 +504,183 @@ const NASTAVNIK_MAP={
     'ВАО':'Морозов Максим'
   }
 };
+
+// К какой вкладке относится округ. Единый источник правды:
+// по нему и раздаём, и проверяем, не уехала ли запись не туда.
+// ЦАО и питерский Центр больше не обслуживаются — в раздаче их нет.
+// Если такое всё же придёт из CRM, округ останется пустым, запись
+// подсветится красным и попадёт в счётчик на дашборде.
+const OKRUG_TAB={
+  'ЮЗ':'spb','ЮВ':'spb','СЗ':'spb','СВ':'spb','Восток':'spb',
+  'САО':'msk_sever','СВАО':'msk_sever','СЗАО':'msk_sever','ВАО':'msk_sever',
+  'ЮАО':'msk_yug','ЮВАО':'msk_yug','ЮЗАО':'msk_yug','ЗАО':'msk_yug'
+};
+
+// ============================================================
+// КТО ЧЕМ ВЛАДЕЕТ
+// Главная причина поломок была в том, что CRM и логист правили одни
+// и те же поля, и каждое обновление превращалось в гонку.
+// Ниже — единственное место, где это записано. Синхронизация физически
+// не может тронуть поле, которого нет в CRM_OWNED.
+// ============================================================
+const CRM_OWNED  = ['city','okrug','nastavnik'];               // раздача: за CRM
+const HAND_OWNED = ['status','smeny','bonus','comment','date_first_shift',
+                    'first_shift_bonus','first_shift_status','first_shift_comment'];
+
+function sanitizeSyncPatch(patch){
+  const clean={};
+  Object.keys(patch||{}).forEach(k=>{ if(CRM_OWNED.indexOf(k)>=0) clean[k]=patch[k]; });
+  const dropped=Object.keys(patch||{}).filter(k=>CRM_OWNED.indexOf(k)<0);
+  if(dropped.length) console.warn('⛔ Синхронизации запрещено писать в:',dropped.join(', '));
+  return clean;
+}
+
+// ============================================================
+// ЖУРНАЛ ИЗМЕНЕНИЙ
+// Пишется в таблицу nastavniki_log (см. nastavniki_log.sql).
+// Если таблицы нет — приложение работает как раньше, журнал молча спит.
+// ============================================================
+const LS_LOGQ='ns_log_queue';
+let LOG_ON = localStorage.getItem('ns_log_off')!=='1';
+let _logQueue=[];
+try{ _logQueue=JSON.parse(localStorage.getItem(LS_LOGQ)||'[]'); }catch(e){}
+function _saveLogQueue(){ try{ localStorage.setItem(LS_LOGQ,JSON.stringify(_logQueue)); }catch(e){} }
+
+function getActor(){ return localStorage.getItem('ns_actor')||''; }
+function setActor(){
+  const cur=getActor();
+  const v=prompt('Кто работает? Имя попадёт в журнал изменений.',cur||'');
+  if(v===null)return;
+  localStorage.setItem('ns_actor',v.trim());
+  paintActor();
+}
+window.setActor=setActor;
+function paintActor(){
+  const el=document.getElementById('actorLabel');
+  if(el) el.textContent = getActor() ? '👤 '+getActor() : '👤 кто вы?';
+}
+
+function _val(v){ return (v===null||v===undefined)?null:String(v); }
+
+async function logChange(rec, changes, source){
+  if(!LOG_ON) return;
+  const id = rec && rec.id;
+  if(!id) return;
+  const items=Object.keys(changes||{}).map(f=>({
+    rec_id:id, crm_id:rec.crm_id?String(rec.crm_id):null, rec_name:rec.name||null,
+    field:f, old_value:_val(rec[f]), new_value:_val(changes[f]),
+    source:source||'hand', actor:getActor()||null
+  })).filter(x=>x.old_value!==x.new_value);
+  if(!items.length) return;
+  await sendLog(items);
+}
+
+async function sendLog(items){
+  if(!LOG_ON) return;
+  if(!navigator.onLine){ _logQueue.push(...items); _saveLogQueue(); return; }
+  try{
+    const {error}=await sb.from('nastavniki_log').insert(items);
+    if(error) throw error;
+  }catch(e){
+    const m=(e && e.message)||'';
+    if(/relation|does not exist|schema cache|not find the table|404/i.test(m)){
+      LOG_ON=false; localStorage.setItem('ns_log_off','1');
+      console.warn('📕 Журнал выключен: таблица nastavniki_log не создана. Выполни nastavniki_log.sql и обнови страницу.');
+    }else{
+      _logQueue.push(...items); _saveLogQueue();
+    }
+  }
+}
+async function flushLogQueue(){
+  if(!LOG_ON || !_logQueue.length || !navigator.onLine) return;
+  const q=[..._logQueue]; _logQueue=[]; _saveLogQueue();
+  try{
+    const {error}=await sb.from('nastavniki_log').insert(q);
+    if(error) throw error;
+  }catch(e){ _logQueue.push(...q); _saveLogQueue(); }
+}
+
+// История по одной записи — прямо из карточки
+async function openHistory(id){
+  const r=rows.find(x=>x.id===id);
+  const bg=document.createElement('div');
+  bg.className='modal-bg open'; bg.style.zIndex='300';
+  bg.innerHTML='<div class="block-modal" style="width:560px"><h4 style="color:var(--gold)">🕓 История: '+esc(r?r.name:'')+'</h4><div id="histBody" style="max-height:60vh;overflow:auto;font-size:12px">Загружаю…</div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn-cancel" style="flex:1" id="histClose">Закрыть</button></div></div>';
+  document.body.appendChild(bg);
+  bg.querySelector('#histClose').addEventListener('click',()=>{bg.remove();});
+  const body=bg.querySelector('#histBody');
+  if(!LOG_ON){ body.innerHTML='Журнал не подключён: таблица <code>nastavniki_log</code> ещё не создана.'; return; }
+  try{
+    const {data,error}=await sb.from('nastavniki_log').select('*').eq('rec_id',id).order('created_at',{ascending:false}).limit(100);
+    if(error) throw error;
+    if(!data||!data.length){ body.innerHTML='Изменений пока нет.'; return; }
+    const FIELD_RU={status:'Статус',smeny:'Смен',bonus:'Бонус',comment:'Комментарий',
+      date_first_shift:'Дата выхода',date_account:'Дата аккаунта',name:'ФИО',phone:'Телефон',
+      nastavnik:'Наставник',okrug:'Округ',city:'Вкладка',first_shift_status:'Первый выход',
+      first_shift_bonus:'Первый выход, ₽',first_shift_comment:'Первый выход, причина',
+      _created:'Запись создана',_deleted:'Запись удалена'};
+    body.innerHTML='<table style="width:100%;border-collapse:collapse">'+data.map(x=>{
+      const t=new Date(x.created_at);
+      const when=String(t.getDate()).padStart(2,'0')+'.'+String(t.getMonth()+1).padStart(2,'0')+' '+
+                 String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+      const who=x.source==='sync'?'синхронизация':(x.actor||'логист');
+      return '<tr><td style="padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">'+when+'</td>'+
+             '<td style="padding:5px 6px;border-bottom:1px solid var(--border)">'+esc(FIELD_RU[x.field]||x.field)+'</td>'+
+             '<td style="padding:5px 6px;border-bottom:1px solid var(--border);color:var(--text2)">'+esc(x.old_value||'—')+' → <b style="color:var(--text)">'+esc(x.new_value||'—')+'</b></td>'+
+             '<td style="padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;color:'+(x.source==='sync'?'var(--handed-text)':'var(--gold)')+'">'+esc(who)+'</td></tr>';
+    }).join('')+'</table>';
+  }catch(e){ body.innerHTML='Не удалось прочитать журнал: '+esc(e.message||''); }
+}
+window.openHistory=openHistory;
+
 let tariffs={learning:250,t1:500,t3:1000};
+
+// ============================================================
+// СОРТИРОВКА
+// Раньше порядок задавался только запросом .order('created_at'),
+// то есть по времени заведения записи. Дата аккаунта и дата выхода
+// при этом шли вразнобой, а после синхронизации с CRM порядок
+// перемешивался ещё раз. Теперь сортируем сами, по любому столбцу.
+// ============================================================
+let sortKey='date_account', sortDir=-1;
+try{
+  const sv=JSON.parse(localStorage.getItem('ns_sort')||'null');
+  if(sv&&sv.key){ sortKey=sv.key; sortDir=sv.dir===1?1:-1; }
+}catch(e){}
+
+function setSort(key){
+  if(sortKey===key) sortDir=-sortDir; else { sortKey=key; sortDir=(key==='name')?1:-1; }
+  localStorage.setItem('ns_sort',JSON.stringify({key:sortKey,dir:sortDir}));
+  renderAll(true);
+}
+window.setSort=setSort;
+
+function updateSortIndicators(){
+  ['date_account','date_first_shift','name','smeny'].forEach(k=>{
+    const el=document.getElementById('si-'+k);
+    if(el) el.textContent = (k===sortKey) ? (sortDir===1?'▲':'▼') : '';
+  });
+}
+
+function sortRows(list){
+  const dir=sortDir;
+  return list.slice().sort((a,b)=>{
+    let x,y;
+    if(sortKey==='smeny'){ x=+(a.smeny||0); y=+(b.smeny||0); }
+    else if(sortKey==='name'){ x=(a.name||'').toLowerCase(); y=(b.name||'').toLowerCase(); }
+    else { x=a[sortKey]||''; y=b[sortKey]||''; }
+    // Пустые даты всегда внизу, независимо от направления
+    if(sortKey!=='smeny'){
+      if(!x&&y) return 1;
+      if(x&&!y) return -1;
+    }
+    if(x<y) return -1*dir;
+    if(x>y) return 1*dir;
+    // Равные — по времени заведения, чтобы порядок не «плавал» между обновлениями
+    const ca=a.created_at||'', cb=b.created_at||'';
+    return ca<cb?1:(ca>cb?-1:0);
+  });
+}
 
 function loadTariffs(){
   try{const t=JSON.parse(localStorage.getItem('nastavniki_tariffs')||'null');if(t)tariffs=t;}catch(e){}
@@ -504,22 +693,21 @@ function saveTariffs(){
   tariffs.t1=+document.getElementById('t1').value||0;
   tariffs.t3=+document.getElementById('t3').value||0;
   localStorage.setItem('nastavniki_tariffs',JSON.stringify(tariffs));
-  renderTable();
+  renderAll();
 }
-function calcBonus(s){
-  const n=+s;
-  if(n===0)return tariffs.learning;
+
+// Тариф "Обучен, не вышел" платится ТОЛЬКО по статусу learning.
+// Раньше он капал всем с нулём смен, включая блок и недозвон.
+function calcBonus(r){
+  if(!r)return 0;
+  const n=+(r.smeny||0);
   if(n>=3)return tariffs.t3;
   if(n>=1)return tariffs.t1;
-  return 0;
+  return r.status==='learning'?tariffs.learning:0;
 }
 
 // ============================================================
 // ПЕРВЫЙ ВЫХОД
-// first_shift_bonus   — сумма, по умолчанию 1500
-// first_shift_status  — pending | approved | rejected
-// first_shift_comment — обязателен при отказе
-// Сумма правится только через модалку; решение пишется одним патчем.
 // ============================================================
 const FS_DEFAULT=1500;
 
@@ -569,7 +757,7 @@ async function fsApprove(id,btn){
   r.first_shift_bonus=amt;r.first_shift_status='approved';r.first_shift_comment='';
   const ok=await safeUpdate(id,{first_shift_bonus:amt,first_shift_status:'approved',first_shift_comment:''},btn);
   if(ok)showToast('✓ Первый выход подтверждён: '+amt+' ₽','#1d6349');
-  renderTable();renderCards(getFiltered());
+  renderAll(true);
 }
 window.fsApprove=fsApprove;
 
@@ -597,7 +785,7 @@ function fsRejectModal(id){
     bg.remove();
     const ok=await safeUpdate(id,{first_shift_status:'rejected',first_shift_comment:txt});
     if(ok)showToast('✕ Отказ зафиксирован','#8a1a1a');
-    renderTable();renderCards(getFiltered());
+    renderAll(true);
   };
   bg.querySelector('#fsSave').addEventListener('click',doSave);
   bg.querySelector('#fsCancel').addEventListener('click',()=>bg.remove());
@@ -632,7 +820,7 @@ function fsAmountModal(id){
     bg.remove();
     const ok=await safeUpdate(id,{first_shift_bonus:v});
     if(ok)showToast('Сумма изменена: '+v+' ₽','#7a5c1a');
-    renderTable();renderCards(getFiltered());
+    renderAll(true);
   };
   bg.querySelector('#fsAmtSave').addEventListener('click',doSave);
   bg.querySelector('#fsAmtCancel').addEventListener('click',()=>bg.remove());
@@ -646,10 +834,11 @@ async function fsReset(id){
   const r=rows.find(x=>x.id===id);if(!r)return;
   r.first_shift_status='pending';r.first_shift_comment='';
   await safeUpdate(id,{first_shift_status:'pending',first_shift_comment:''});
-  renderTable();renderCards(getFiltered());
+  renderAll(true);
 }
 window.fsReset=fsReset;
 
+const STATUS_LIST=['handed','learning','works','coming','nodial','block','other'];
 function statusClass(s){return{works:'s-works',learning:'s-learning',coming:'s-coming',nodial:'s-nodial',block:'s-block',other:'s-other',handed:'s-handed'}[s]||'s-other';}
 function statusLabel(s){return{works:'Работает',learning:'Обучен, но не вышел',coming:'Выйдет. Дата',nodial:'Недозвон. Дата',block:'Блок. Причина',other:'Иное',handed:'Передан наставнику'}[s]||s;}
 function statusBadgeClass(s){return{works:'sb-works',learning:'sb-learning',coming:'sb-coming',nodial:'sb-nodial',block:'sb-block',other:'sb-other',handed:'sb-handed'}[s]||'sb-other';}
@@ -659,28 +848,30 @@ function fd(d){if(!d)return'—';try{const p=d.split('-');return p[2]+'.'+p[1]+'
 
 // ============================================================
 // НАДЁЖНОЕ ХРАНЕНИЕ ИЗМЕНЕНИЙ
-// Все правки сначала пишутся в localStorage, потом в Supabase.
-// При обновлении страницы — восстанавливаются и отправляются.
 // ============================================================
 
-const LS_DIRTY   = 'ns_dirty';    // несохранённые правки { id: { field: val } }
-const LS_PENDING = 'ns_pending';  // очередь к отправке   [ { id, patch } ]
+const LS_DIRTY   = 'ns_dirty';
+const LS_PENDING = 'ns_pending';
 
 let dirtyRows = {};
 let _pendingWrites = [];
 (function restore(){
-  const SCHEMA_VER = 'v4'; // увеличить при изменении полей БД
+  const SCHEMA_VER = 'v5';
   const savedVer = localStorage.getItem('ns_schema_ver');
-  if(savedVer !== SCHEMA_VER){
-    console.log('🔄 Новая схема БД — сбрасываю pending/dirty очереди');
-    localStorage.removeItem(LS_PENDING);
-    localStorage.removeItem(LS_DIRTY);
-    localStorage.setItem('ns_schema_ver', SCHEMA_VER);
-    return;
-  }
 
   try { dirtyRows      = JSON.parse(localStorage.getItem(LS_DIRTY)  ||'{}'); } catch(e){}
   try { _pendingWrites = JSON.parse(localStorage.getItem(LS_PENDING)||'[]'); } catch(e){}
+
+  // Смена схемы больше НЕ стирает очередь молча: раньше здесь терялось
+  // всё, что логист заполнил и что не успело уйти на сервер.
+  if(savedVer !== SCHEMA_VER){
+    if(_pendingWrites.length){
+      const key='ns_pending_backup_'+Date.now();
+      try{ localStorage.setItem(key, JSON.stringify(_pendingWrites)); }catch(e){}
+      console.log('🗄 Схема сменилась. Очередь сохранена в '+key+' и будет отправлена, а не удалена.');
+    }
+    localStorage.setItem('ns_schema_ver', SCHEMA_VER);
+  }
 
   const INVALID_FIELDS = ['notes'];
   let cleaned = false;
@@ -698,7 +889,6 @@ let _pendingWrites = [];
   if(cleaned){
     localStorage.setItem(LS_DIRTY, JSON.stringify(dirtyRows));
     localStorage.setItem(LS_PENDING, JSON.stringify(_pendingWrites));
-    console.log('🧹 Очищены устаревшие данные из очереди');
   }
 
   if(_pendingWrites.length) console.log('📦 В очереди:', _pendingWrites.length, 'несохранённых изменений');
@@ -712,14 +902,12 @@ function setDirty(id, patch){
   Object.assign(dirtyRows[id], patch);
   _saveDirty();
 }
-
 function clearDirty(id, fields){
   if(!dirtyRows[id]) return;
   fields.forEach(f => delete dirtyRows[id][f]);
   if(!Object.keys(dirtyRows[id]).length) delete dirtyRows[id];
   _saveDirty();
 }
-
 function applyDirty(serverRows){
   if(!Object.keys(dirtyRows).length) return serverRows;
   return serverRows.map(r => dirtyRows[r.id] ? {...r, ...dirtyRows[r.id]} : r);
@@ -734,8 +922,8 @@ function showToast(msg, color){
 }
 
 async function flushPending(){
+  flushLogQueue();
   if(!_pendingWrites.length || !navigator.onLine) return;
-  console.log('🔁 Отправляю очередь:', _pendingWrites.length, 'записей');
   const queue = [..._pendingWrites];
   _pendingWrites = [];
   _savePending();
@@ -744,7 +932,6 @@ async function flushPending(){
       const {error} = await sb.from('nastavniki').update(item.patch).eq('id', item.id);
       if(error) throw error;
       clearDirty(item.id, Object.keys(item.patch));
-      console.log('✅ Отправлено:', item.id, item.patch);
     }catch(e){
       _pendingWrites.push(item);
       console.warn('❌ Ошибка отправки, вернул в очередь:', e.message);
@@ -753,7 +940,9 @@ async function flushPending(){
   _savePending();
 }
 
-async function safeUpdate(id, patch, el){
+async function safeUpdate(id, patch, el, source){
+  const before=rows.find(x=>x.id===id);
+  if(before) logChange(before, patch, source||'hand');
   setDirty(id, patch);
 
   if(!navigator.onLine){
@@ -775,27 +964,81 @@ async function safeUpdate(id, patch, el){
   }catch(e){
     _pendingWrites.push({id, patch});
     _savePending();
-    console.warn('❌ Ошибка сохранения, в очереди:', e.message);
     if(el){ el.style.outline='2px solid var(--red-text)'; el.title='Нет связи — сохранится автоматически'; }
     showToast('⚠️ Нет связи — сохранится автоматически', '#8a4a00');
     return false;
   }
 }
 
-window.addEventListener('online', ()=>{
-  console.log('🟢 Сеть восстановлена');
-  flushPending().then(()=>loadData());
-});
+window.addEventListener('online', ()=>{ flushPending().then(()=>loadData()); });
 window.addEventListener('offline', ()=>{
   const dot=document.getElementById('syncDot');
   const status=document.getElementById('syncStatus');
   if(dot) dot.style.background='var(--red-text)';
   if(status) status.textContent='нет сети';
 });
+window.addEventListener('beforeunload', function(e){
+  if(_pendingWrites.length || Object.keys(dirtyRows).length){
+    e.preventDefault(); e.returnValue='';
+  }
+});
+
+// ============================================================
+// БЕСПЕРЕБОЙНОСТЬ ИНТЕРФЕЙСА
+// Перерисовка НИКОГДА не происходит под руками у логиста.
+// ============================================================
+
+let _staleRows=null;
+
+function isBusy(){
+  if(document.querySelector('.modal-bg.open')) return true;
+  if(document.querySelector('.status-menu:not(.hidden)')) return true;
+  if(typeof selected!=='undefined' && selected.size>0) return true;
+  const ae=document.activeElement;
+  if(!ae) return false;
+  const editable = ae.isContentEditable || ['INPUT','SELECT','TEXTAREA'].indexOf(ae.tagName)>=0;
+  if(!editable) return false;
+  return !!(ae.closest('#tbody') || ae.closest('#mobileCards'));
+}
+
+function showStale(show){
+  const n=document.getElementById('staleNote');
+  if(n) n.classList.toggle('show', !!show);
+}
+function applyStale(){
+  if(_staleRows){ rows=applyDirty(_staleRows); _staleRows=null; }
+  showStale(false);
+  renderAll(true);
+}
+window.applyStale=applyStale;
+
+// Единая точка перерисовки. force=true — рисуем сразу (после действия
+// самого пользователя). Иначе — только если он ничего не редактирует.
+let _lastSig='';
+function renderAll(force){
+  try{ _renderAll(force); }
+  catch(e){
+    console.error('Ошибка отрисовки:',e);
+    showToast('Сбой отрисовки — данные целы, нажми «Обновить»','#8a4a00');
+  }
+}
+function _renderAll(force){
+  if(!force && isBusy()){ showStale(true); return; }
+  const fr=getFiltered();
+  const sig=JSON.stringify(fr)+'|'+currentView+'|'+JSON.stringify(tariffs)+'|'+sortKey+sortDir;
+  if(!force && sig===_lastSig) return; // данные те же — не дёргаем DOM
+  _lastSig=sig;
+  renderTable(fr);
+  renderCards(fr);
+  if(currentView==='report') buildReport();
+  if(currentView==='dash') buildDash();
+  showStale(false);
+}
+window.renderAll=renderAll;
 
 let _loadTimer=null;
 let _loadInFlight=false;
-async function loadData(){
+async function loadData(force){
   if(_loadInFlight)return;
   _loadInFlight=true;
   if(_loadTimer)clearTimeout(_loadTimer);
@@ -816,14 +1059,19 @@ async function loadData(){
   try{
     const{data,error}=await sb.from('nastavniki').select('*').eq('city',currentTab).order('created_at',{ascending:false});
     if(error)throw error;
-    rows=applyDirty(data||[]);
     dot.style.background='var(--green-text)';
     status.textContent=_pendingWrites.length ? `онлайн · очередь: ${_pendingWrites.length}` : 'онлайн';
     await flushPending();
-    renderTable();
-    renderCards(getFiltered());
-    updateNastavnikFilter();
-    initTableEvents();
+
+    if(isBusy()&&!force){
+      // Логист печатает — свежие данные кладём в сторону, показываем плашку.
+      _staleRows=data||[];
+      showStale(true);
+    }else{
+      rows=applyDirty(data||[]);
+      updateNastavnikFilter();
+      renderAll();
+    }
   }catch(e){
     console.error('Load error:',e);
     dot.style.background='var(--red-text)';
@@ -847,15 +1095,20 @@ function getFiltered(){
   const fsFilter=(document.getElementById('filterFirstShift')||{}).value||'';
   const from=document.getElementById('dateFrom').value;
   const to=document.getElementById('dateTo').value;
-  return rows.filter(r=>{
+  const out=rows.filter(r=>{
     if(search&&!r.name?.toLowerCase().includes(search)&&!r.nastavnik?.toLowerCase().includes(search))return false;
     if(status&&r.status!==status)return false;
     if(nastavnik&&r.nastavnik!==nastavnik)return false;
     if(fsFilter&&fsState(r)!==fsFilter)return false;
-    if(from&&r.date_account<from)return false;
-    if(to&&r.date_account>to)return false;
+    // Запись без даты аккаунта не выпадает из периода: раньше она молча
+    // исчезала из таблицы, и выглядело это как потерянные данные.
+    if(r.date_account){
+      if(from&&r.date_account<from)return false;
+      if(to&&r.date_account>to)return false;
+    }
     return true;
   });
+  return sortRows(out);
 }
 // INLINE HELPERS
 function inlineEdit(id,field,value){
@@ -868,7 +1121,7 @@ function inlineDate(id,field,value){
 function inlineSmeny(id,value){
   const cur=+value||0;
   const list=[0,1,2,3,4,5];
-  if(cur>5)list.push(cur); // не терять фактическое значение больше 5
+  if(cur>5)list.push(cur);
   const opts=list.map(n=>`<option value="${n}" ${cur===n?'selected':''}>${n}</option>`).join('');
   return`<select class="inline-select" data-id="${id}" data-field="smeny">${opts}</select>`;
 }
@@ -876,25 +1129,42 @@ function inlineBonus(id,value){
   const opts=['none','unpaid','paid'].map(v=>`<option value="${v}" ${value===v?'selected':''}>${bonusLabel(v)}</option>`).join('');
   return`<select class="inline-select" data-id="${id}" data-field="bonus">${opts}</select>`;
 }
+function statusMenuHtml(id,extraStyle){
+  return`<div class="status-menu hidden" id="sm-${id}"${extraStyle?' style="'+extraStyle+'"':''}>
+    ${STATUS_LIST.map(s=>`<div class="status-menu-item ${statusBadgeClass(s)}" onclick="selectStatus('${id}','${s}')">${statusLabel(s)}</div>`).join('')}
+  </div>`;
+}
+// Округ, не подходящий вкладке, красим красным — видно сразу, без отчёта.
+function okrugHtml(r){
+  if(!r.okrug) return '—';
+  const tab=OKRUG_TAB[r.okrug];
+  const bad = !tab || tab!==r.city;
+  const title = bad ? ' title="Округ не соответствует вкладке или не распознан"' : '';
+  return`<span class="okrug-tag${bad?' bad':''}"${title}>${esc(r.okrug)}</span>`;
+}
 
 // МОБИЛЬНЫЕ КАРТОЧКИ
 function renderCards(fr){
   const wrap=document.getElementById('mobileCards');
   if(!wrap)return;
+  const scroll=wrap.scrollTop;
   if(!fr.length){wrap.innerHTML='<div style="text-align:center;padding:40px;color:var(--text2)"><div style="font-size:36px;margin-bottom:8px">📋</div>Нет записей</div>';return;}
   wrap.innerHTML=fr.map(r=>{
-    const bonus=calcBonus(r.smeny);
+    const bonus=calcBonus(r);
     return`<div class="m-card ${statusClass(r.status)}" data-id="${r.id}">
       <div class="m-card-top">
         <div>
           <div class="m-card-name">${esc(r.name)||'—'}</div>
           <div class="m-card-date">📅 ${r.date_account||'—'} ${r.date_first_shift?'→ '+r.date_first_shift:''}</div>
         </div>
-        <button class="edit-btn" onclick="openEdit('${r.id}')">✏️</button>
+        <div style="display:flex;gap:6px">
+          <button class="edit-btn" onclick="openEdit('${r.id}')">✏️</button>
+          <button class="edit-btn" onclick="openHistory('${r.id}')" title="История изменений">🕓</button>
+        </div>
       </div>
       <div class="m-card-row">
         <span class="m-card-label">Округ</span>
-        ${r.okrug?`<span class="okrug-tag">${esc(r.okrug)}</span>`:'<span class="m-card-val">—</span>'}
+        ${okrugHtml(r)}
       </div>
       <div class="m-card-row">
         <span class="m-card-label">Наставник</span>
@@ -905,9 +1175,7 @@ function renderCards(fr){
         <span class="m-card-label">Статус</span>
         <button class="sbadge ${statusBadgeClass(r.status)}" onclick="toggleStatusMenu('${r.id}')" style="position:relative">
           ${statusLabel(r.status)}
-          <div class="status-menu hidden" id="sm-${r.id}" style="position:fixed;top:auto;left:16px;right:16px;width:auto">
-            ${['handed','works','coming','nodial','block','other'].map(s=>`<div class="status-menu-item ${statusBadgeClass(s)}" onclick="selectStatus('${r.id}','${s}')">${statusLabel(s)}</div>`).join('')}
-          </div>
+          ${statusMenuHtml(r.id,'position:fixed;top:auto;left:16px;right:16px;width:auto')}
         </button>
       </div>
       ${r.comment?`<div class="m-card-row"><span class="m-card-label">Комментарий</span><span class="m-card-val" style="font-size:12px;color:var(--text2)">${esc(r.comment)}</span></div>`:''}
@@ -929,13 +1197,14 @@ function renderCards(fr){
       </div>
     </div>`;
   }).join('');
+  wrap.scrollTop=scroll;
 }
 
 async function mobileChangeSmeny(id,delta,btn){
   const r=rows.find(x=>x.id===id);if(!r)return;
   r.smeny=Math.max(0,(+r.smeny||0)+delta);
   document.getElementById('ms-'+id).textContent=r.smeny;
-  const bonus=calcBonus(r.smeny);
+  const bonus=calcBonus(r);
   const bonEl=document.getElementById('mb-'+id);
   if(bonEl)bonEl.innerHTML=bonus>0?`<span class="amount">${bonus} ₽</span>`:'<span style="color:var(--text2)">—</span>';
   const el=document.getElementById('ms-'+id);
@@ -952,10 +1221,8 @@ const BONUS_ORDER=['none','unpaid','paid'];
 async function mobileCycleBonus(id,cur){
   const r=rows.find(x=>x.id===id);if(!r)return;
   r.bonus=BONUS_ORDER[(BONUS_ORDER.indexOf(cur)+1)%BONUS_ORDER.length];
-  const btn=document.getElementById('mbon-'+id);
-  if(btn)btn.textContent=bonusLabel(r.bonus);
   const bonEl=document.getElementById('mbon-'+id);
-  if(bonEl){bonEl.style.opacity='0.5';}
+  if(bonEl){bonEl.textContent=bonusLabel(r.bonus);bonEl.style.opacity='0.5';}
   const ok2=await safeUpdate(id,{bonus:r.bonus},bonEl);
   if(bonEl){
     bonEl.style.opacity='';
@@ -964,64 +1231,68 @@ async function mobileCycleBonus(id,cur){
 }
 window.mobileCycleBonus=mobileCycleBonus;
 
-// EVENT DELEGATION
-let saveTimer=null;
+// EVENT DELEGATION — вешается РОВНО один раз.
+// Раньше initTableEvents() вызывался из loadData каждые 30 секунд,
+// и обработчики накапливались: одно редактирование слало десятки запросов.
+let _eventsInit=false;
 function initTableEvents(){
+  if(_eventsInit)return;
+  _eventsInit=true;
   const tbody=document.getElementById('tbody');
   tbody.addEventListener('blur',async function(e){
     const el=e.target;
-    if(!el.classList.contains('inline-cell'))return;
+    if(!el.classList||!el.classList.contains('inline-cell'))return;
     const id=el.dataset.id,field=el.dataset.field,val=el.textContent.trim();
     const r=rows.find(x=>x.id===id);if(r)r[field]=val;
+    el.style.background='';el.style.boxShadow='';
     await safeUpdate(id,{[field]:val},el);
+    if(_staleRows && !isBusy()) applyStale();
   },true);
   tbody.addEventListener('keydown',function(e){
     if(e.key==='Enter'&&e.target.classList.contains('inline-cell')){e.preventDefault();e.target.blur();}
   });
   tbody.addEventListener('focus',function(e){
-    if(e.target.classList.contains('inline-cell')){e.target.style.background='var(--gold-bg)';e.target.style.boxShadow='0 0 0 1.5px var(--gold)';}
-  },true);
-  tbody.addEventListener('blur',function(e){
-    if(e.target.classList.contains('inline-cell')){e.target.style.background='';e.target.style.boxShadow='';}
+    if(e.target.classList&&e.target.classList.contains('inline-cell')){
+      e.target.style.background='var(--gold-bg)';e.target.style.boxShadow='0 0 0 1.5px var(--gold)';
+    }
   },true);
   tbody.addEventListener('change',async function(e){
     const el=e.target;
-    if(!el.dataset.id)return;
+    if(!el.dataset||!el.dataset.id)return;
     const id=el.dataset.id,field=el.dataset.field;
     const val=(field==='smeny'||field==='first_shift_bonus')?+el.value:el.value;
     const r=rows.find(x=>x.id===id);if(r)r[field]=val;
-    if(field==='date_first_shift'){
-      el.classList.toggle('date-filled',!!val);
-    }
-    if(field==='smeny'){
+    if(field==='date_first_shift'){ el.classList.toggle('date-filled',!!val); }
+    if(field==='smeny'&&r){
       const row=el.closest('tr');
-      const sumCell=row?.querySelector('.sum-cell');
-      const bonus=calcBonus(val);
+      const sumCell=row?row.querySelector('.sum-cell'):null;
+      const bonus=calcBonus(r);
       if(sumCell)sumCell.innerHTML=bonus>0?`<span class="amount">${bonus} ₽</span>`:'<span style="color:var(--text2)">—</span>';
     }
     await safeUpdate(id,{[field]:val},el);
+    if(_staleRows && !isBusy()) applyStale();
   });
 }
 
-function renderTable(){
-  const fr=getFiltered();
+function renderTable(fr){
+  fr=fr||getFiltered();
+  const wrap=document.getElementById('tableWrap');
+  const scroll=wrap?wrap.scrollTop:0;
   const tbody=document.getElementById('tbody');
   if(!fr.length){tbody.innerHTML=`<tr><td colspan="14"><div class="empty-state"><div class="icon">📋</div>Нет записей</div></td></tr>`;return;}
   tbody.innerHTML=fr.map(r=>{
-    const bonus=calcBonus(r.smeny);
+    const bonus=calcBonus(r);
     return`<tr class="${statusClass(r.status)}">
       <td><input type="checkbox" class="row-check" data-id="${r.id}" onclick="updateBulkBar()" style="accent-color:var(--gold);width:15px;height:15px;cursor:pointer"></td>
       <td style="font-size:12px">${inlineDate(r.id,'date_account',r.date_account)}</td>
       <td style="font-size:12px">${inlineDate(r.id,'date_first_shift',r.date_first_shift)}</td>
       <td style="font-weight:600">${inlineEdit(r.id,'name',r.name)}</td>
-      <td>${r.okrug?`<span class="okrug-tag">${esc(r.okrug)}</span>`:'—'}</td>
+      <td>${okrugHtml(r)}</td>
       <td style="color:var(--gold)">${inlineEdit(r.id,'nastavnik',r.nastavnik)}</td>
       <td style="position:relative">
         <div class="status-dropdown-wrap" id="sdw-${r.id}">
           <button class="sbadge ${statusBadgeClass(r.status)}" onclick="toggleStatusMenu('${r.id}')" style="cursor:pointer">${statusLabel(r.status)}</button>
-          <div class="status-menu hidden" id="sm-${r.id}">
-            ${['handed','works','coming','nodial','block','other'].map(s=>`<div class="status-menu-item ${statusBadgeClass(s)}" onclick="selectStatus('${r.id}','${s}')">${statusLabel(s)}</div>`).join('')}
-          </div>
+          ${statusMenuHtml(r.id)}
         </div>
       </td>
       <td style="font-size:12px;color:var(--text2)">${inlineEdit(r.id,'phone',r.phone)}</td>
@@ -1030,36 +1301,36 @@ function renderTable(){
       <td style="text-align:center">${inlineSmeny(r.id,r.smeny)}</td>
       <td style="text-align:center" class="sum-cell">${bonus>0?`<span class="amount">${bonus} ₽</span>`:'<span style="color:var(--text2)">—</span>'}</td>
       <td>${inlineBonus(r.id,r.bonus)}</td>
-      <td><button class="edit-btn" onclick="openEdit('${r.id}')">✏️</button></td>
+      <td style="white-space:nowrap"><button class="edit-btn" onclick="openEdit('${r.id}')">✏️</button> <button class="edit-btn" onclick="openHistory('${r.id}')" title="История изменений">🕓</button></td>
     </tr>`;
   }).join('');
+  if(wrap)wrap.scrollTop=scroll;
+  updateSortIndicators();
+  initTableEvents();
 }
+
 function toggleStatusMenu(id){
   document.querySelectorAll('.status-menu').forEach(m=>{if(m.id!=='sm-'+id)m.classList.add('hidden');});
   document.getElementById('sm-'+id).classList.toggle('hidden');
 }
 document.addEventListener('click',function(e){
-  if(!e.target.closest('.status-dropdown-wrap'))
+  if(!e.target.closest('.status-dropdown-wrap')&&!e.target.closest('.sbadge'))
     document.querySelectorAll('.status-menu').forEach(m=>m.classList.add('hidden'));
 });
 
 async function selectStatus(id,status){
   document.querySelectorAll('.status-menu').forEach(m=>m.classList.add('hidden'));
-  if(status==='block'){
-    showBlockModal(id);
-    return;
-  }
-  const ok=await safeUpdate(id,{status});
-  if(!ok)console.warn('⚠️ selectStatus: нет связи, в очереди');
+  if(status==='block'){ showBlockModal(id); return; }
   const r=rows.find(x=>x.id===id);if(r)r.status=status;
-  renderTable();
+  await safeUpdate(id,{status});
+  renderAll(true);
 }
 window.selectStatus=selectStatus;
 window.toggleStatusMenu=toggleStatusMenu;
 
 function showBlockModal(id){
   const r=rows.find(x=>x.id===id);
-  const existing=r?.comment||'';
+  const existing=r?r.comment||'':'';
   const bg=document.createElement('div');
   bg.className='modal-bg open';
   bg.style.zIndex='300';
@@ -1079,14 +1350,14 @@ function showBlockModal(id){
 window.showBlockModal=showBlockModal;
 
 async function saveBlock(id,reason,modal){
-  const ok=await safeUpdate(id,{status:'block',comment:reason});
-  if(!ok)console.warn('⚠️ saveBlock: нет связи, в очереди');
   const r=rows.find(x=>x.id===id);
   if(r){r.status='block';r.comment=reason;}
   modal.remove();
-  renderTable();
+  await safeUpdate(id,{status:'block',comment:reason});
+  renderAll(true);
 }
 window.saveBlock=saveBlock;
+
 function openCommentModal(id){
   const r=rows.find(x=>x.id===id);
   if(!r)return;
@@ -1103,26 +1374,22 @@ function openCommentModal(id){
   </div>`;
   document.body.appendChild(bg);
   const ta = bg.querySelector('#commentText');
-  const saveBtn = bg.querySelector('#saveCommentBtn');
   const doSave = () => saveComment(id, ta.value, bg);
-  saveBtn.addEventListener('click', doSave);
+  bg.querySelector('#saveCommentBtn').addEventListener('click', doSave);
   ta.addEventListener('keydown', function(e){
     if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) doSave();
   });
-  bg.addEventListener('click', function(e){
-    if(e.target===this) doSave();
-  });
+  bg.addEventListener('click', function(e){ if(e.target===this) doSave(); });
   setTimeout(()=>ta.focus(),100);
 }
 window.openCommentModal=openCommentModal;
 
 async function saveComment(id,text,modal){
-  const ok=await safeUpdate(id,{comment:text});
-  if(!ok)console.warn('⚠️ saveComment: нет связи, в очереди');
   const r=rows.find(x=>x.id===id);
   if(r)r.comment=text;
   modal.remove();
-  renderTable();
+  await safeUpdate(id,{comment:text});
+  renderAll(true);
 }
 window.saveComment=saveComment;
 
@@ -1132,51 +1399,37 @@ function buildDash(){
     const s=r.status||'other';
     stats[s]=(stats[s]||0)+1;
   }
-
   const statusLabels={
-    'handed':'Передан наставнику',
-    'works':'Работает',
-    'coming':'Выйдет',
-    'nodial':'Недозвон',
-    'block':'Блок',
-    'other':'Иное'
+    'handed':'Передан наставнику','learning':'Обучен, не вышел','works':'Работает',
+    'coming':'Выйдет','nodial':'Недозвон','block':'Блок','other':'Иное'
   };
-
   const statusEmoji={
-    'handed':'📋',
-    'works':'✅',
-    'coming':'📅',
-    'nodial':'📞',
-    'block':'🚫',
-    'other':'❓'
+    'handed':'📋','learning':'🎓','works':'✅','coming':'📅','nodial':'📞','block':'🚫','other':'❓'
   };
-
   const statusColor={
-    'handed':'#7c5fb8',
-    'works':'#48bb78',
-    'coming':'#ed8936',
-    'nodial':'#f6ad55',
-    'block':'#f56565',
-    'other':'#718096'
+    'handed':'#7c5fb8','learning':'#3178c8','works':'#48bb78','coming':'#ed8936',
+    'nodial':'#f6ad55','block':'#f56565','other':'#718096'
   };
-
   const total=rows.length;
 
   let html=Object.entries(stats)
     .sort((a,b)=>b[1]-a[1])
     .map(([status,count])=>{
       const pct=total?Math.round(count*100/total):0;
-      return `<div style="background:${statusColor[status]};color:white;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
-        <div style="font-size:24px;margin-bottom:8px">${statusEmoji[status]}</div>
+      return `<div style="background:${statusColor[status]||'#718096'};color:white;padding:20px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
+        <div style="font-size:24px;margin-bottom:8px">${statusEmoji[status]||'❓'}</div>
         <div style="font-size:28px;font-weight:bold">${count}</div>
-        <div style="font-size:12px;margin-top:8px">${statusLabels[status]}</div>
+        <div style="font-size:12px;margin-top:8px">${statusLabels[status]||status}</div>
         <div style="font-size:11px;opacity:0.8;margin-top:4px">${pct}%</div>
       </div>`;
     }).join('');
 
-  // Первый выход
   let fsA=0,fsP=0,fsR=0;
   rows.forEach(r=>{const s=fsState(r);if(s==='approved')fsA++;else if(s==='rejected')fsR++;else fsP++;});
+
+  // Записи, у которых округ не соответствует вкладке или не распознан
+  const misrouted=rows.filter(r=>{const t=OKRUG_TAB[r.okrug];return !r.okrug||!t||t!==r.city;}).length;
+
   html+=`<div style="background:#2d6a4f;color:white;padding:20px;border-radius:8px">
       <div style="font-size:24px;margin-bottom:8px">✓</div>
       <div style="font-size:28px;font-weight:bold">${fsA}</div>
@@ -1191,15 +1444,26 @@ function buildDash(){
       <div style="font-size:24px;margin-bottom:8px">✕</div>
       <div style="font-size:28px;font-weight:bold">${fsR}</div>
       <div style="font-size:12px;margin-top:8px">Отказов по первому выходу</div>
+    </div>
+    <div style="background:${misrouted?'#8a4a00':'#3a3a3a'};color:white;padding:20px;border-radius:8px">
+      <div style="font-size:24px;margin-bottom:8px">📍</div>
+      <div style="font-size:28px;font-weight:bold">${misrouted}</div>
+      <div style="font-size:12px;margin-top:8px">Округ не совпадает с вкладкой</div>
+    </div>
+    <div style="background:${_crmConflicts.length?'#7a2e6a':'#3a3a3a'};color:white;padding:20px;border-radius:8px"
+         title="${esc(_crmConflicts.map(c=>c.fio+': '+c.was+' → '+c.should).join('\n'))}">
+      <div style="font-size:24px;margin-bottom:8px">✋</div>
+      <div style="font-size:28px;font-weight:bold">${_crmConflicts.length}</div>
+      <div style="font-size:12px;margin-top:8px">В CRM другой округ — записи оставлены как есть</div>
     </div>`;
 
   document.getElementById('dashContent').innerHTML=html;
 }
-
 window.buildDash=buildDash;
 
 function switchTab(tab){
   currentTab=tab;
+  _staleRows=null;showStale(false);
   localStorage.setItem('nastavniki_tab', tab);
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
   loadData();
@@ -1209,12 +1473,16 @@ function setView(v){
   document.getElementById('tableWrap').style.display=v==='table'?'':'none';
   document.getElementById('reportWrap').style.display=v==='report'?'flex':'none';
   document.getElementById('dashWrap').style.display=v==='dash'?'flex':'none';
+  // На мобиле карточки заменяют таблицу — значит и прятать их надо вместе с ней.
+  document.getElementById('mobileCards').classList.toggle('cards-off', v!=='table');
   document.getElementById('viewTableBtn').className=`btn${v==='table'?' btn-active':''}`;
   document.getElementById('viewReportBtn').className=`btn${v==='report'?' btn-active':''}`;
   document.getElementById('viewDashBtn').className=`btn${v==='dash'?' btn-active':''}`;
   if(v==='dash')buildDash();
   if(v==='report')buildReport();
 }
+window.setView=setView;
+
 function buildReport(){
   const from=document.getElementById('dateFrom').value;
   const to=document.getElementById('dateTo').value;
@@ -1225,7 +1493,7 @@ function buildReport(){
   data.forEach(r=>{
     const n=r.nastavnik||'Без наставника';
     if(!byN[n])byN[n]={name:n,total:0,count:0,candidates:[],paid:0,unpaid:0,fsApproved:0,fsPending:0,fsRejected:0};
-    const b=calcBonus(r.smeny);
+    const b=calcBonus(r);
     byN[n].total+=b;byN[n].count++;byN[n].candidates.push(r);
     if(r.bonus==='paid')byN[n].paid+=b;
     else if(r.bonus==='unpaid')byN[n].unpaid+=b;
@@ -1265,6 +1533,7 @@ function buildReport(){
         <thead><tr>
           <th style="text-align:left;padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px">Кандидат</th>
           <th style="padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px">Округ</th>
+          <th style="padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:center">Статус</th>
           <th style="padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:center">1-й выход</th>
           <th style="padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:center">Смен</th>
           <th style="padding:6px 8px;color:var(--gold-dim);font-weight:600;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.5px;text-align:center">Сумма</th>
@@ -1272,18 +1541,21 @@ function buildReport(){
         </tr></thead>
         <tbody>${n.candidates.map(r=>`<tr>
           <td style="padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text)">${esc(r.name)||'—'}</td>
-          <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center">${r.okrug?`<span class="okrug-tag">${esc(r.okrug)}</span>`:'—'}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center">${okrugHtml(r)}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center"><span class="sbadge ${statusBadgeClass(r.status)}" style="cursor:default">${statusLabel(r.status)}</span></td>
           <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center">${
             fsState(r)==='approved'?`<span class="fs-chip ok">✓ ${fsAmount(r)} ₽</span>`
             :fsState(r)==='rejected'?`<span class="fs-chip no" title="${esc(r.first_shift_comment)}">✕ отказ</span>`
             :`<span class="fs-chip wait">⏳ ${fsAmount(r)} ₽</span>`}</td>
           <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center;font-weight:700;color:var(--text)">${r.smeny||0}</td>
-          <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center">${calcBonus(r.smeny)?`<span class="amount">${calcBonus(r.smeny)} ₽</span>`:'—'}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid var(--border);text-align:center">${calcBonus(r)?`<span class="amount">${calcBonus(r)} ₽</span>`:'—'}</td>
           <td style="padding:6px 8px;border-bottom:1px solid var(--border)"><span class="bchip ${bonusClass(r.bonus)}">${bonusLabel(r.bonus)}</span></td>
         </tr>`).join('')}</tbody>
       </table>
     </div>`).join('')}`;
 }
+window.buildReport=buildReport;
+
 function openModal(){
   editId=null;
   document.getElementById('modalTitle').textContent='Новая запись';
@@ -1293,7 +1565,7 @@ function openModal(){
   ['fName','fComment','fDateFirst','fPhone'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fOkrug').value='';
   document.getElementById('fNastavnik').value='';
-  document.getElementById('fStatus').value='works';
+  document.getElementById('fStatus').value='handed';
   document.getElementById('fSmeny').value='0';
   document.getElementById('fBonus').value='none';
   document.getElementById('fFsBonus').value=FS_DEFAULT;
@@ -1307,13 +1579,14 @@ function openEdit(id){
   editId=id;
   document.getElementById('modalTitle').textContent='Редактировать запись';
   document.getElementById('delBtn').classList.remove('hidden');
+  document.getElementById('fCity').value=r.city||currentTab;
   document.getElementById('fDate').value=r.date_account||'';
   document.getElementById('fDateFirst').value=r.date_first_shift||'';
   document.getElementById('fName').value=r.name||'';
   document.getElementById('fOkrug').value=r.okrug||'';
   document.getElementById('fNastavnik').value=r.nastavnik||'';
   document.getElementById('fPhone').value=r.phone||'';
-  document.getElementById('fStatus').value=r.status||'works';
+  document.getElementById('fStatus').value=r.status||'handed';
   document.getElementById('fComment').value=r.comment||'';
   document.getElementById('fSmeny').value=r.smeny||0;
   document.getElementById('fBonus').value=r.bonus||'none';
@@ -1322,18 +1595,32 @@ function openEdit(id){
   document.getElementById('fFsComment').value=r.first_shift_comment||'';
   document.getElementById('modalBg').classList.add('open');
 }
+window.openEdit=openEdit;
+
 function autoFillNastavnik(){
   const okrug=document.getElementById('fOkrug').value;
-  const map=NASTAVNIK_MAP[currentTab]||{};
+  const city=document.getElementById('fCity').value||currentTab;
+  const map=NASTAVNIK_MAP[city]||{};
   const auto=map[okrug];
-  if(auto){
-    const field=document.getElementById('fNastavnik');
-    const wasAuto=Object.values(NASTAVNIK_MAP[currentTab]||{}).includes(field.value)||field.value==='';
-    if(wasAuto)field.value=auto;
+  const field=document.getElementById('fNastavnik');
+  // Вкладку подставляем по округу — руками ошибиться уже нельзя
+  const tab=OKRUG_TAB[okrug];
+  if(tab&&tab!==city){ document.getElementById('fCity').value=tab; }
+  const autoMap=NASTAVNIK_MAP[tab||city]||{};
+  const autoName=autoMap[okrug];
+  if(autoName){
+    const allAuto=[].concat(
+      Object.values(NASTAVNIK_MAP.spb),Object.values(NASTAVNIK_MAP.msk_yug),Object.values(NASTAVNIK_MAP.msk_sever));
+    const wasAuto=allAuto.includes(field.value)||field.value==='';
+    if(wasAuto)field.value=autoName;
   }
 }
-function closeModal(){document.getElementById('modalBg').classList.remove('open');}
+window.autoFillNastavnik=autoFillNastavnik;
+
+function closeModal(){document.getElementById('modalBg').classList.remove('open');if(_staleRows&&!isBusy())applyStale();}
+window.closeModal=closeModal;
 document.getElementById('modalBg').onclick=function(e){if(e.target===this)closeModal();};
+
 async function saveRecord(){
   const d={city:document.getElementById('fCity').value||currentTab,date_account:document.getElementById('fDate').value,date_first_shift:document.getElementById('fDateFirst').value,name:document.getElementById('fName').value.trim(),okrug:document.getElementById('fOkrug').value,nastavnik:document.getElementById('fNastavnik').value.trim(),phone:document.getElementById('fPhone').value.trim(),status:document.getElementById('fStatus').value,comment:document.getElementById('fComment').value.trim(),smeny:+document.getElementById('fSmeny').value,bonus:document.getElementById('fBonus').value,
     first_shift_bonus:+document.getElementById('fFsBonus').value||0,
@@ -1342,51 +1629,117 @@ async function saveRecord(){
   if(!d.name){alert('Введите ФИО курьера');return;}
   if(d.first_shift_status==='rejected'&&!d.first_shift_comment){alert('При отказе по первому выходу нужна причина');return;}
   if(!navigator.onLine){alert('❌ Нет подключения к сети. Дождитесь восстановления связи и повторите сохранение.');return;}
-  const btn=document.querySelector('.btn-save');
+  const btn=document.querySelector('.modal .btn-save');
   if(btn){btn.disabled=true;btn.textContent='Сохранение...';}
   try{
     let error;
-    if(editId){({error}=await sb.from('nastavniki').update(d).eq('id',editId));}
-    else{({error}=await sb.from('nastavniki').insert(d));}
+    if(editId){
+      const before=rows.find(x=>x.id===editId);
+      ({error}=await sb.from('nastavniki').update(d).eq('id',editId));
+      if(!error && before) logChange(before, d, 'hand');
+    }
+    else{
+      let inserted;
+      ({data:inserted, error}=await sb.from('nastavniki').insert(d).select());
+      if(!error && inserted && inserted[0]) logChange(inserted[0], {_created:d.name}, 'hand');
+    }
     if(error)throw error;
     closeModal();
     await loadData();
   }catch(e){
     console.error('❌ Ошибка сохранения:',e);
-    alert('❌ Не удалось сохранить запись: '+(e.message||'ошибка сети')+'\n\nПопробуйте ещё раз — модальное окно останется открытым, данные не потеряны.');
+    alert('❌ Не удалось сохранить запись: '+(e.message||'ошибка сети')+'\n\nПопробуйте ещё раз — окно осталось открытым, данные не потеряны.');
   }finally{
     if(btn){btn.disabled=false;btn.textContent='Сохранить';}
   }
 }
+window.saveRecord=saveRecord;
+
 async function deleteRecord(){
   if(!editId||!confirm('Удалить запись?'))return;
   try{
+    const before=rows.find(x=>x.id===editId);
+    if(before) await logChange(before,{_deleted:before.name||'запись'},'hand');
     const{error}=await sb.from('nastavniki').delete().eq('id',editId);
-    if(error){
-      console.error('❌ Ошибка удаления:',error);
-      alert('❌ Ошибка удаления: '+error.message);
-      return;
-    }
-    console.log('✅ Запись удалена');
+    if(error){ alert('❌ Ошибка удаления: '+error.message); return; }
     closeModal();
     await loadData();
-  }catch(e){
-    console.error('❌ Exception:',e);
-    alert('❌ Ошибка: '+e.message);
-  }
+  }catch(e){ alert('❌ Ошибка: '+e.message); }
 }
+window.deleteRecord=deleteRecord;
+
 function clearFilters(){
   ['searchInput','dateFrom','dateTo'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('filterStatus').value='';
   document.getElementById('filterNastavnik').value='';
   document.getElementById('filterFirstShift').value='';
-  renderTable();
+  renderAll(true);
 }
+window.clearFilters=clearFilters;
+
 document.getElementById('addBtn').onclick=openModal;
-setInterval(()=>{if(!document.hidden)loadData();},30000);
+
+// ============================================================
+// ОБНОВЛЕНИЕ РАЗ В СУТКИ
+// Никаких фоновых перезагрузок каждые 30 секунд. Данные тянутся
+// при открытии страницы, при смене вкладки, по кнопке "Обновить"
+// и один раз при наступлении новых суток.
+// ============================================================
+const LS_LAST_SYNC='ns_last_sync';
+function todayKey(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function syncedToday(){ return localStorage.getItem(LS_LAST_SYNC)===todayKey(); }
+function markSynced(){
+  localStorage.setItem(LS_LAST_SYNC, todayKey());
+  const el=document.getElementById('syncStatus');
+  if(el){
+    const t=new Date();
+    el.textContent='обновлено '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  }
+}
+async function manualRefresh(){
+  const b=document.getElementById('refreshBtn');
+  if(b){b.disabled=true;b.textContent='⏳';}
+  try{
+    await flushPending();
+    await syncFromCRM(true);
+    await loadData(true);
+    markSynced();
+    showToast('Данные обновлены','#1d6349');
+  } finally {
+    if(b){b.disabled=false;b.textContent='🔄 Обновить';}
+  }
+}
+window.manualRefresh=manualRefresh;
+
+// Очередь несохранённого дослыается сама раз в минуту. Таблицу при этом
+// не трогаем — обновление данных всё так же раз в сутки.
+setInterval(()=>{
+  if(!navigator.onLine || !_pendingWrites.length) return;
+  flushPending().then(()=>{
+    const st=document.getElementById('syncStatus');
+    if(st && !_pendingWrites.length && st.textContent.indexOf('очередь')>=0) st.textContent='всё сохранено';
+    else if(st && _pendingWrites.length) st.textContent='очередь: '+_pendingWrites.length;
+  });
+}, 60*1000);
+
+// Раз в 10 минут проверяем ТОЛЬКО одно: не наступили ли новые сутки.
+// Если наступили — одно обновление, и снова тишина до завтра.
+setInterval(()=>{
+  if(document.hidden||isBusy())return;
+  if(!syncedToday()){ syncFromCRM().then(()=>loadData()).then(markSynced); }
+}, 10*60*1000);
+
+// Возврат во вкладку данные больше не перетряхивает — только отправляет
+// то, что не ушло. Раньше именно здесь у логистов слетал набранный текст.
 document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden)loadData();
+  if(document.hidden)return;
+  flushPending();
+  if(!syncedToday()&&!isBusy()){ syncFromCRM().then(()=>loadData()).then(markSynced); }
 });
+
 // ПАРСИНГ ТЕКСТА АККАУНТА
 function parseAccountText(text){
   const result={};
@@ -1403,12 +1756,23 @@ function parseAccountText(text){
   return result;
 }
 
+// Нормализация округа. Работает и с "ЮГ : ЮАО", и с "юзао", и с "Юго-Запад".
 const OKRUG_ALIAS={
-  'вао':'ВАО','сао':'САО','свао':'СВАО','сзао':'СЗАО','юао':'ЮАО',
-  'ювао':'ЮВАО','юзао':'ЮЗАО','зао':'ЗАО','цао':'ЦАО',
-  'юз':'ЮЗ','юв':'ЮВ','св':'СВ','сз':'СЗ','восток':'Восток','центр':'Центр',
-  'юго-запад':'ЮЗ','юго-восток':'ЮВ','северо-восток':'СВ','северо-запад':'СЗ'
+  'ВАО':'ВАО','САО':'САО','СВАО':'СВАО','СЗАО':'СЗАО','ЮАО':'ЮАО',
+  'ЮВАО':'ЮВАО','ЮЗАО':'ЮЗАО','ЗАО':'ЗАО',
+  'ЮЗ':'ЮЗ','ЮВ':'ЮВ','СВ':'СВ','СЗ':'СЗ','ВОСТОК':'Восток',
+  'ЮГО-ЗАПАД':'ЮЗ','ЮГО-ВОСТОК':'ЮВ','СЕВЕРО-ВОСТОК':'СВ','СЕВЕРО-ЗАПАД':'СЗ'
 };
+function normOkrug(raw){
+  let s=(raw||'').trim().toUpperCase();
+  if(!s)return '';
+  if(s.includes(':')) s=s.split(':').pop().trim();
+  return OKRUG_ALIAS[s]||'';
+}
+function okrugPrefix(raw){
+  const s=(raw||'').trim().toUpperCase();
+  return s.includes(':') ? s.split(':')[0].trim() : '';
+}
 
 async function pasteRecord(){
   let text='';
@@ -1423,11 +1787,11 @@ async function pasteRecord(){
   if(parsed.name)document.getElementById('fName').value=parsed.name;
   document.getElementById('fDate').value=new Date().toISOString().split('T')[0];
   if(parsed.okrug){
-    const key=parsed.okrug.toLowerCase().trim();
-    const mapped=OKRUG_ALIAS[key]||parsed.okrug;
-    const sel=document.getElementById('fOkrug');
-    for(let o of sel.options){if(o.value===mapped||o.text===mapped){sel.value=o.value;break;}}
-    autoFillNastavnik();
+    const mapped=normOkrug(parsed.okrug);
+    if(mapped){
+      document.getElementById('fOkrug').value=mapped;
+      autoFillNastavnik();
+    }
   }
   if(parsed.phone)document.getElementById('fPhone').value=parsed.phone;
   const parts=[];
@@ -1439,13 +1803,8 @@ window.pasteRecord=pasteRecord;
 
 // BULK ACTIONS
 let selected=new Set();
-
 function toggleAll(cb){
-  document.querySelectorAll('.row-check').forEach(c=>{
-    c.checked=cb.checked;
-    if(cb.checked)selected.add(c.dataset.id);
-    else selected.delete(c.dataset.id);
-  });
+  document.querySelectorAll('.row-check').forEach(c=>{ c.checked=cb.checked; });
   updateBulkBar();
 }
 window.toggleAll=toggleAll;
@@ -1455,12 +1814,8 @@ function updateBulkBar(){
   document.querySelectorAll('.row-check:checked').forEach(c=>selected.add(c.dataset.id));
   const bar=document.getElementById('bulkBar');
   const info=document.getElementById('bulkInfo');
-  if(selected.size>0){
-    bar.style.display='flex';
-    info.textContent=`${selected.size} выбрано`;
-  } else {
-    bar.style.display='none';
-  }
+  if(selected.size>0){ bar.style.display='flex'; info.textContent=`${selected.size} выбрано`; }
+  else { bar.style.display='none'; }
 }
 window.updateBulkBar=updateBulkBar;
 
@@ -1470,6 +1825,7 @@ function clearSelection(){
   const cb=document.getElementById('checkAll');
   if(cb)cb.checked=false;
   document.getElementById('bulkBar').style.display='none';
+  if(_staleRows)applyStale();
 }
 window.clearSelection=clearSelection;
 
@@ -1480,19 +1836,12 @@ async function deleteSelected(){
   let deleted=0,failed=0;
   for(const id of ids){
     try{
+      const before=rows.find(x=>x.id===id);
+      if(before) await logChange(before,{_deleted:before.name||'запись'},'hand');
       const{error}=await sb.from('nastavniki').delete().eq('id',id);
-      if(error){
-        console.error('Delete error for '+id+':', error);
-        failed++;
-      }else{
-        deleted++;
-      }
-    }catch(e){
-      console.error('Exception for '+id+':', e);
-      failed++;
-    }
+      if(error){ failed++; } else { deleted++; }
+    }catch(e){ failed++; }
   }
-  console.log(`✅ Удалено: ${deleted}, ❌ Ошибок: ${failed}`);
   if(failed>0)alert(`⚠️ Удалено ${deleted} из ${ids.length}. Ошибок: ${failed}`);
   clearSelection();
   await loadData();
@@ -1501,40 +1850,19 @@ window.deleteSelected=deleteSelected;
 
 // Удаление дубликатов — ТОЛЬКО ручной запуск из консоли: removeDuplicates()
 async function removeDuplicates(){
-  console.log('🔍 Ищу дубликаты...');
   const {data:allRows}=await sb.from('nastavniki').select('id,name,city,phone,crm_id,created_at').order('created_at',{ascending:true});
   if(!allRows || !allRows.length){ console.log('Нет данных'); return 0; }
-
   function normP(s){ return (s||'').replace(/\D/g,'').slice(-10); }
-
-  const seenPhone={};
-  const seenCrmId={};
-  const seenNameCity={};
-  const toDelete=[];
-
+  const seenPhone={},seenCrmId={},seenNameCity={},toDelete=[];
   for(const r of allRows){
     let isDup=false;
     const phone=normP(r.phone);
-
-    if(r.crm_id && seenCrmId[String(r.crm_id)]!==undefined){
-      toDelete.push(r.id);
-      console.log('❌ Дубль по crm_id:', r.name, r.crm_id);
-      isDup=true;
-    }
-    else if(phone.length>=10 && seenPhone[phone]!==undefined){
-      toDelete.push(r.id);
-      console.log('❌ Дубль по телефону:', r.name, phone);
-      isDup=true;
-    }
+    if(r.crm_id && seenCrmId[String(r.crm_id)]!==undefined){ toDelete.push(r.id); isDup=true; }
+    else if(phone.length>=10 && seenPhone[phone]!==undefined){ toDelete.push(r.id); isDup=true; }
     else {
       const key=(r.name||'').trim()+'|'+(r.city||'').trim();
-      if(key!=='|' && seenNameCity[key]!==undefined){
-        toDelete.push(r.id);
-        console.log('❌ Дубль по имени+городу:', r.name, r.city);
-        isDup=true;
-      }
+      if(key!=='|' && seenNameCity[key]!==undefined){ toDelete.push(r.id); isDup=true; }
     }
-
     if(!isDup){
       if(r.crm_id) seenCrmId[String(r.crm_id)]=r.id;
       if(phone.length>=10) seenPhone[phone]=r.id;
@@ -1542,31 +1870,28 @@ async function removeDuplicates(){
       if(key!=='|') seenNameCity[key]=r.id;
     }
   }
-
-  if(toDelete.length===0){
-    console.log('✅ Дубликатов не найдено');
-    return 0;
-  }
-
-  if(!confirm('Найдено '+toDelete.length+' дубликатов. Удалить? Отменить будет нельзя.')){
-    console.log('Отменено пользователем');
-    return 0;
-  }
-
-  console.log('🗑️ Удаляю', toDelete.length, 'дубликатов...');
+  if(!toDelete.length){ console.log('✅ Дубликатов не найдено'); return 0; }
+  if(!confirm('Найдено '+toDelete.length+' дубликатов. Удалить? Отменить будет нельзя.')) return 0;
   let deleted=0;
   for(const id of toDelete){
     const {error}=await sb.from('nastavniki').delete().eq('id',id);
     if(!error) deleted++;
-    else console.warn('Ошибка удаления id='+id, error.message);
   }
-  console.log('✨ Удалено', deleted, 'дубликатов!');
+  console.log('✨ Удалено', deleted);
   await loadData();
   return deleted;
 }
 window.removeDuplicates=removeDuplicates;
 
+window.addEventListener('error', function(ev){
+  console.error('Необработанная ошибка:', ev.message);
+});
+window.addEventListener('unhandledrejection', function(ev){
+  console.error('Необработанный сбой запроса:', ev.reason && ev.reason.message);
+});
+
 loadTariffs();
+paintActor();
 (function(){
   const savedTab = localStorage.getItem('nastavniki_tab');
   if (savedTab && ['spb','msk_yug','msk_sever'].includes(savedTab)) {
@@ -1574,23 +1899,18 @@ loadTariffs();
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===savedTab));
   }
 })();
-loadData();
-// Автоудаление дублей ВЫКЛЮЧЕНО: чистило по name+city без подтверждения,
-// схлопывало однофамильцев и удаляло позднюю запись вместе со сменами
-// и решением по первому выходу. Ручной запуск: removeDuplicates()
 
-// Устанавливаем текущий месяц по умолчанию
+// Текущий месяц по умолчанию — ДО первой загрузки, иначе таблица рисуется дважды
 (function(){
   const today=new Date();
   const year=today.getFullYear();
   const month=String(today.getMonth()+1).padStart(2,'0');
-  const firstDay=`${year}-${month}-01`;
   const lastDay=new Date(year,today.getMonth()+1,0);
-  const lastDayStr=`${year}-${month}-${String(lastDay.getDate()).padStart(2,'0')}`;
-  document.getElementById('dateFrom').value=firstDay;
-  document.getElementById('dateTo').value=lastDayStr;
-  renderTable();
+  document.getElementById('dateFrom').value=`${year}-${month}-01`;
+  document.getElementById('dateTo').value=`${year}-${month}-${String(lastDay.getDate()).padStart(2,'0')}`;
 })();
+
+loadData();
 
 // THEME
 let isDark=true;
@@ -1600,127 +1920,163 @@ function toggleTheme(){
   document.getElementById('themeBtn').textContent=isDark?'🌙':'☀️';
   localStorage.setItem('nastavniki_theme',isDark?'dark':'light');
 }
+window.toggleTheme=toggleTheme;
 (function(){
   const saved=localStorage.getItem('nastavniki_theme');
   if(saved==='light'){isDark=false;document.body.classList.add('light');document.getElementById('themeBtn').textContent='☀️';}
 })();
 
 // ===== СИНХРОНИЗАЦИЯ С CRM =====
+// Возвращает {city, okrug, nastavnik} — округ уже нормализован,
+// в базу пишется именно он, а не сырое "ЮГ : ЮАО" из CRM.
 function getCityAndNastavnik(crmCity, crmOkrug) {
-  const crmOkrugRaw = (crmOkrug||'').trim().toUpperCase();
-  const crmCityUpper = (crmCity||'').toUpperCase();
+  const okrug = normOkrug(crmOkrug);
+  const prefix = okrugPrefix(crmOkrug);
+  const cityUpper = (crmCity||'').toUpperCase();
 
-  let prefix = '';
-  let okrugPart = crmOkrugRaw;
-  if (crmOkrugRaw.includes(' : ')) {
-    const parts = crmOkrugRaw.split(' : ');
-    prefix = parts[0].trim();
-    okrugPart = parts[1].trim();
-  } else if (crmOkrugRaw.includes(':')) {
-    const parts = crmOkrugRaw.split(':');
-    prefix = parts[0].trim();
-    okrugPart = parts[1].trim();
+  let city = OKRUG_TAB[okrug] || '';
+
+  if(!city){
+    // Округ не распознан — раскладываем хотя бы по городу, чтобы запись
+    // не улетела молча в Север. Округ останется пустым и подсветится.
+    if(prefix==='СПБ'||cityUpper.includes('СПБ')||cityUpper.includes('SPB')||cityUpper.includes('САНКТ')) city='spb';
+    else if(prefix==='СЕВЕР') city='msk_sever';
+    else if(prefix==='ЮГ') city='msk_yug';
+    else if(prefix==='МСК'||cityUpper.includes('МСК')||cityUpper.includes('MSK')||cityUpper.includes('МОСКВА')) city='msk_sever';
+    else return null;
+    return { city, okrug:'', nastavnik:'' };
   }
 
-  const okrugAlias = {
-    'ВОСТОК': 'Восток',
-    'СЗ': 'СЗ', 'СВ': 'СВ', 'ЮЗ': 'ЮЗ', 'ЮВ': 'ЮВ',
-    'СЗАО': 'СЗАО', 'САО': 'САО', 'СВАО': 'СВАО', 'ВАО': 'ВАО',
-    'ЮАО': 'ЮАО', 'ЮВАО': 'ЮВАО', 'ЮЗАО': 'ЮЗАО', 'ЗАО': 'ЗАО', 'ЦАО': 'ЦАО',
-  };
-  const okrug = okrugAlias[okrugPart] || okrugPart;
-
-  const isSpb = prefix === 'СПБ' || crmCityUpper.includes('СПБ') || crmCityUpper.includes('SPB') || crmCityUpper.includes('САНКТ');
-  const isMskSever = prefix === 'СЕВЕР';
-  const isMskYug = prefix === 'ЮГ';
-  const isMsk = prefix === 'МСК' || crmCityUpper.includes('МСК') || crmCityUpper.includes('MSK') || crmCityUpper.includes('МОСКВА');
-
-  if (isSpb) {
-    const nastavnik = NASTAVNIK_MAP.spb[okrug] || '';
-    return { city: 'spb', nastavnik };
-  }
-
-  if (isMskSever) {
-    const nastavnik = NASTAVNIK_MAP.msk_sever[okrug] || '';
-    return { city: 'msk_sever', nastavnik };
-  }
-
-  if (isMskYug) {
-    const nastavnik = NASTAVNIK_MAP.msk_yug[okrug] || '';
-    return { city: 'msk_yug', nastavnik };
-  }
-
-  if (isMsk) {
-    const severRayons = ['СЗАО','САО','СВАО','ВАО'];
-    const yugRayons   = ['ЮАО','ЮВАО','ЮЗАО','ЗАО'];
-
-    if (severRayons.includes(okrug)) {
-      const nastavnik = NASTAVNIK_MAP.msk_sever[okrug] || '';
-      return { city: 'msk_sever', nastavnik };
-    }
-    if (yugRayons.includes(okrug)) {
-      const nastavnik = NASTAVNIK_MAP.msk_yug[okrug] || '';
-      return { city: 'msk_yug', nastavnik };
-    }
-    return { city: 'msk_sever', nastavnik: '' };
-  }
-
-  return null;
+  const nastavnik = (NASTAVNIK_MAP[city]||{})[okrug] || '';
+  return { city, okrug, nastavnik };
 }
 
-async function syncFromCRM() {
+// ЗАПИСЬ, ТРОНУТАЯ РУКАМИ, НЕ ПРАВИТСЯ СИНХРОНИЗАЦИЕЙ НИКОГДА.
+// Признак ручной работы — любой из: статус не 'handed', заполнен
+// комментарий, есть смены, проставлена дата выхода, принято решение
+// по первому выходу, начислен бонус, вписан наставник не из карты.
+function isTouchedByHand(r){
+  if(!r) return false;
+  if(r.status && r.status!=='handed') return true;
+  if((r.comment||'').trim()) return true;
+  if(+(r.smeny||0) > 0) return true;
+  if(r.date_first_shift) return true;
+  if(r.first_shift_status && r.first_shift_status!=='pending') return true;
+  if((r.first_shift_comment||'').trim()) return true;
+  if(r.bonus && r.bonus!=='none') return true;
+  if(!isAutoNastavnik(r.nastavnik)) return true;
+  return false;
+}
+
+// Наставник считается "поставленным руками", если это не пусто и не то,
+// что подставляет карта. Такое имя синхронизация не трогает.
+function isAutoNastavnik(name){
+  if(!name) return true;
+  const all=[].concat(
+    Object.values(NASTAVNIK_MAP.spb),
+    Object.values(NASTAVNIK_MAP.msk_yug),
+    Object.values(NASTAVNIK_MAP.msk_sever));
+  return all.includes(name);
+}
+
+let _crmConflicts=[];
+
+// Синхронизация больше не работает молча. Что она сделала и чего НЕ сделала —
+// видно человеку, а не только в консоли.
+function showSyncReport(rep){
+  if(!rep)return;
+  const n=(rep.added||[]).length+(rep.rerouted||[]).length+(rep.skipped||[]).length+(rep.statusUpdated||0);
+  if(!n)return;
+  const t=new Date(rep.at||Date.now());
+  const when=String(t.getDate()).padStart(2,'0')+'.'+String(t.getMonth()+1).padStart(2,'0')+' '+
+             String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  const list=(arr,title,color)=>!arr.length?'':
+    '<div style="margin-top:10px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:'+color+';font-weight:700">'+title+' — '+arr.length+'</div>'+
+    arr.slice(0,30).map(x=>'<div style="font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">'+
+      esc(x.fio)+(x.to?' → '+esc(x.to):'')+(x.from?' <span style="color:var(--text2)">(было '+esc(x.from)+')</span>':'')+
+      (x.why?' <span style="color:var(--text2)">— '+esc(x.why)+', в CRM '+esc(x.should)+'</span>':'')+'</div>').join('')+
+    (arr.length>30?'<div style="font-size:11px;color:var(--text2);padding-top:4px">…и ещё '+(arr.length-30)+'</div>':'')+'</div>';
+
+  const bg=document.createElement('div');
+  bg.className='modal-bg open'; bg.style.zIndex='250';
+  bg.innerHTML='<div class="block-modal" style="width:560px">'+
+    '<h4 style="color:var(--gold)">🔄 Синхронизация с CRM · '+when+'</h4>'+
+    '<div style="max-height:60vh;overflow:auto">'+
+      list(rep.added||[],'Добавлено из CRM','var(--green-text)')+
+      list(rep.skipped||[],'Оставлено как есть: запись уже у нас','var(--yellow-text)')+
+      list(rep.crmWorks||[],'В CRM «вышел в смену», у нас «передан наставнику» — статус ставите вы','var(--handed-text)')+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn-save" style="flex:1" id="srOk">Понятно</button></div></div>';
+  document.body.appendChild(bg);
+  bg.querySelector('#srOk').addEventListener('click',()=>{bg.remove();if(_staleRows&&!isBusy())applyStale();});
+}
+window.showSyncReport=showSyncReport;
+function lastSyncReport(){
+  try{ return JSON.parse(localStorage.getItem('ns_sync_report')||'null'); }catch(e){ return null; }
+}
+window.lastSyncReport=lastSyncReport;
+async function syncFromCRM(force) {
+  if(!force && syncedToday()) return;   // раз в сутки
+  if(!force && isBusy()) return;        // не под руками у логиста
   try {
     const { data: crmRows, error: crmErr } = await sb
       .from('candidates')
       .select('id,fio,city,okrug,date,tel')
-      .in('status', ['проверка СБ', 'передан в логистику', 'вышел в смену'])
+      .in('status', ['проверка СБ', 'передан в логистику', 'вышел в смену']);
 
     if (crmErr) { console.warn('❌ CRM sync error:', crmErr.message); return; }
-    if (!crmRows || !crmRows.length) { console.log('ℹ️ CRM: нет новых записей'); return; }
+    if (!crmRows || !crmRows.length) return;
 
-    const { data: allRecords } = await sb.from('nastavniki').select('id,phone,crm_id');
+    const { data: allRecords } = await sb.from('nastavniki').select('id,phone,crm_id,city,okrug,nastavnik,status');
 
     function normPhone(s){ return (s||'').replace(/\D/g,'').slice(-10); }
 
     const existingPhones = new Set();
-    const existingCrmIds = new Set();
+    const byCrmId = {};
     (allRecords||[]).forEach(r => {
       const n = normPhone(r.phone);
       if(n.length >= 10) existingPhones.add(n);
-      if(r.crm_id) existingCrmIds.add(String(r.crm_id));
+      if(r.crm_id) byCrmId[String(r.crm_id)] = r;
     });
 
-    console.log(`📊 CRM: ${crmRows.length} записей, уже есть ${existingPhones.size} телефонов, ${existingCrmIds.size} crm_id`);
-
-    let added=0;
+    let added=0, rerouted=0;
+    const conflicts=[];
+    const report={added:[],rerouted:[],skipped:[],crmWorks:[],statusUpdated:0,at:new Date().toISOString()};
     for (const c of crmRows) {
       const tel = (c.tel || '').trim();
       const telNorm = normPhone(tel);
       const crmId = String(c.id);
-
-      if(existingCrmIds.has(crmId)){
-        console.log(`⏭️  Пропущен (crm_id уже есть): ${c.fio} (${crmId})`);
-        continue;
-      }
-
-      if(telNorm.length >= 10 && existingPhones.has(telNorm)){
-        console.log(`⏭️  Пропущен (телефон уже есть): ${c.fio} (${tel})`);
-        continue;
-      }
-
       const mapped = getCityAndNastavnik(c.city, c.okrug);
-      if (!mapped) {
-        console.log(`⏭️  Пропущен (не МСК/СПБ): ${c.fio}`);
+      if (!mapped) continue;
+
+      const exist = byCrmId[crmId];
+
+      // Запись уже есть — проверяем, не поменяли ли округ в CRM.
+      // Раньше распределение считалось один раз при заведении, и правка
+      // округа рекрутёром до нас не доходила никогда.
+      // ЗАПИСЬ, КОТОРАЯ УЖЕ У НАС, НЕ ПРАВИТСЯ СИНХРОНИЗАЦИЕЙ НИКОГДА.
+      // Ни округ, ни вкладка, ни наставник, ни статус. Ничего.
+      // Если в CRM что-то изменилось — только показываем это человеку.
+      if(exist){
+        const needCity  = mapped.city  && exist.city !==mapped.city;
+        const needOkrug = mapped.okrug && exist.okrug!==mapped.okrug;
+        if(!needCity && !needOkrug) continue;
+        conflicts.push({fio:c.fio, id:exist.id, was:exist.city+' / '+(exist.okrug||'—'),
+                        should:mapped.city+' / '+mapped.okrug});
+        report.skipped.push({fio:c.fio, why:'запись уже заведена, синк её не трогает',
+                             was:exist.city+' / '+(exist.okrug||'—'), should:mapped.city+' / '+mapped.okrug});
         continue;
       }
+
+      if(telNorm.length >= 10 && existingPhones.has(telNorm)) continue;
 
       const newRecord = {
-        crm_id:          String(c.id),
+        crm_id:          crmId,
         city:            mapped.city,
         name:            c.fio || '—',
-        okrug:           c.okrug || '',
+        okrug:           mapped.okrug,
         nastavnik:       mapped.nastavnik,
-        phone:           c.tel && c.tel !== '—' ? c.tel : '',
+        phone:           tel && tel !== '—' ? tel : '',
         date_account:    c.date || new Date().toISOString().split('T')[0],
         date_first_shift:'',
         status:          'handed',
@@ -1732,50 +2088,58 @@ async function syncFromCRM() {
         first_shift_comment: '',
       };
 
-      const { error: insErr } = await sb.from('nastavniki').insert(newRecord);
-      if (insErr) {
-        console.warn(`❌ Ошибка добавления ${c.fio}:`, insErr.message);
-      } else {
-        console.log(`✅ Добавлен: ${c.fio}`);
+      const { data: ins, error: insErr } = await sb.from('nastavniki').insert(newRecord).select();
+      if (insErr) console.warn(`❌ Ошибка добавления ${c.fio}:`, insErr.message);
+      else {
         if(telNorm.length >= 10) existingPhones.add(telNorm);
-        if(crmId) existingCrmIds.add(crmId);
+        byCrmId[crmId]=newRecord;
         added++;
+        report.added.push({fio:newRecord.name, to:mapped.city+' / '+(mapped.okrug||'округ не распознан')});
+        if(ins&&ins[0]) logChange(ins[0], {_created:'из CRM'}, 'sync');
       }
     }
 
-    const { data: smenaRows } = await sb
-      .from('candidates')
-      .select('id')
-      .eq('status', 'вышел в смену')
-
+    // Статус ставит только логист. Синхронизация его не меняет ни при каких
+    // условиях — даже если в CRM человек уже "вышел в смену".
+    // Такие случаи попадают в отчёт справкой, решение остаётся за человеком.
+    const { data: smenaRows } = await sb.from('candidates').select('id').eq('status', 'вышел в смену');
     if (smenaRows && smenaRows.length) {
-      const smenaIds = smenaRows.map(r => String(r.id));
-      // Только из 'handed' — иначе синк каждые 30 сек затирал руками
-      // выставленные 'block', 'nodial', 'coming' и терял решение оператора.
-      const { error: updErr } = await sb
-        .from('nastavniki')
-        .update({ status: 'works' })
-        .in('crm_id', smenaIds)
-        .eq('status', 'handed');
-      if (updErr) console.warn('❌ Status sync error:', updErr.message);
-      else console.log(`🔄 Статусы синхронизированы`);
+      const smenaIds = new Set(smenaRows.map(r => String(r.id)));
+      (allRecords||[]).forEach(r=>{
+        if(r.crm_id && smenaIds.has(String(r.crm_id)) && r.status==='handed'){
+          report.crmWorks.push({fio:r.name||'—'});
+        }
+      });
     }
 
-    if(added > 0){
-      console.log(`✨ Синхронизация готова: добавлено ${added} записей`);
+    _crmConflicts=conflicts;
+    try{ localStorage.setItem('ns_sync_report', JSON.stringify(report)); }catch(e){}
+    if(report.added.length||report.skipped.length||report.crmWorks.length){
+      showSyncReport(report);
+    }
+    if(conflicts.length){
+      console.warn('⚠️ В CRM изменился округ у записей, которые уже заполняли руками. Не тронуты:');
+      conflicts.forEach(c=>console.warn('   '+c.fio+': сейчас '+c.was+', в CRM '+c.should));
+    }
+
+    if(added>0){
+      console.log(`✨ Синхронизация: добавлено ${added}. Существующие записи не трогались, расхождений с CRM: ${conflicts.length}`);
       await loadData();
-    } else {
-      console.log('✨ Синхронизация: нет новых записей');
     }
-
   } catch(e) {
     console.warn('Sync exception:', e);
   }
 }
 
-console.log('🔄 Синхронизация CRM включена (статусы: проверка СБ, передан в логистику, вышел в смену)');
-syncFromCRM();
-setInterval(() => { if (!document.hidden) syncFromCRM(); }, 30000);
+// При открытии страницы: если сегодня ещё не обновлялись — обновимся один раз.
+(function(){
+  if(syncedToday()){
+    const el=document.getElementById('syncStatus');
+    if(el) el.textContent='обновлено сегодня';
+    return;
+  }
+  syncFromCRM().then(()=>loadData()).then(markSynced);
+})();
 // ===== END СИНХРОНИЗАЦИЯ С CRM =====
 </script>
 </body>
