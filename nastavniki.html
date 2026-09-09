@@ -941,6 +941,10 @@ async function flushPending(){
 }
 
 async function safeUpdate(id, patch, el, source){
+  // Страховка от битого патча: ключ undefined роняет запрос с 400 и записи не будет
+  const bad=Object.keys(patch||{}).filter(k=>!k||k==='undefined');
+  if(bad.length){ console.warn('⛔ Пропущен патч с некорректным полем:',patch); return false; }
+  if(!id || !Object.keys(patch||{}).length) return false;
   const before=rows.find(x=>x.id===id);
   if(before) logChange(before, patch, source||'hand');
   setDirty(id, patch);
@@ -1263,6 +1267,7 @@ function initTableEvents(){
     const el=e.target;
     if(!el.dataset||!el.dataset.id)return;
     const id=el.dataset.id,field=el.dataset.field;
+    if(!field)return;   // чекбокс выделения и прочие элементы без поля — не сохраняем
     const val=(field==='smeny'||field==='first_shift_bonus')?+el.value:el.value;
     const r=rows.find(x=>x.id===id);if(r)r[field]=val;
     if(field==='date_first_shift'){ el.classList.toggle('date-filled',!!val); }
@@ -1745,17 +1750,25 @@ document.addEventListener('visibilitychange',()=>{
 
 // ПАРСИНГ ТЕКСТА АККАУНТА
 function parseAccountText(text){
+  // Поля режутся по следующему известному заголовку, а не по концу строки:
+  // вставка часто приходит одной строкой, и тогда каждое поле утягивало хвост.
+  const LABELS='(?:Регион|Район|Округ|Телеграм|Telegram|ФИО|Имя|Номер телефона|Телефон|Логин|Пароль|Пароль от|Почта|Email)';
+  function grab(label){
+    const re=new RegExp(label+'[^:\\n]*:\\s*([\\s\\S]*?)(?=\\s*'+LABELS+'[^:\\n]*:|\\n|$)','i');
+    const m=text.match(re);
+    return m?m[1].trim():'';
+  }
   const result={};
-  const fioM=text.match(/ФИО[^\n]*?([А-ЯЁ][а-яёА-ЯЁ\s]{3,})/);
-  if(fioM)result.name=fioM[1].split('\n')[0].trim();
-  const okrugM=text.match(/Район[^:\n]*:[\s]*([^\n\r]+)/i);
-  if(okrugM)result.okrug=okrugM[1].trim();
-  const phoneM=text.match(/(?:Номер телефона|Телефон)[^:\n]*:[\s]*([0-9+][^\n\r]+)/i);
-  if(phoneM)result.phone=phoneM[1].trim();
-  const tgM=text.match(/Телеграм[^@\n]*(@[A-Za-z0-9_]+)/i);
-  if(tgM)result.tg=tgM[1].trim();
-  const loginM=text.match(/Логин[^:\n]*:[^\n`]*`?([\w.@+\-]+@[\w.]+)/i);
-  if(loginM)result.login=loginM[1].trim();
+  const fio=grab('(?:ФИО|Имя)');
+  if(fio) result.name=fio.slice(0,80).trim();
+  const okrug=grab('(?:Район|Округ)');
+  if(okrug) result.okrug=okrug;
+  const phone=grab('(?:Номер телефона|Телефон)');
+  if(phone) result.phone=phone.replace(/[^\d+()\-\s]/g,'').trim();
+  const tg=text.match(/(@[A-Za-z0-9_]{3,})/);
+  if(tg) result.tg=tg[1];
+  const login=text.match(/([\w.+\-]+@[\w.\-]+\.[A-Za-z]{2,})/);
+  if(login) result.login=login[1];
   return result;
 }
 
