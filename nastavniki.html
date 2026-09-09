@@ -873,16 +873,19 @@ let _pendingWrites = [];
     localStorage.setItem('ns_schema_ver', SCHEMA_VER);
   }
 
-  const INVALID_FIELDS = ['notes'];
+  const INVALID_FIELDS = ['notes','undefined',''];
   let cleaned = false;
   _pendingWrites = _pendingWrites.filter(p => {
-    const hasInvalid = INVALID_FIELDS.some(f => p.patch && f in p.patch);
-    if(hasInvalid){ console.log('🧹 Удалён устаревший pending:', p.id, p.patch); cleaned=true; }
-    return !hasInvalid;
+    if(!p || !p.patch || !p.id){ cleaned=true; return false; }
+    const keys=Object.keys(p.patch);
+    // Патч без полей или с ключом 'undefined' будет вечно падать с 400.
+    const broken = !keys.length || keys.some(k => !k || INVALID_FIELDS.indexOf(k)>=0);
+    if(broken){ console.log('🧹 Выброшен нерабочий патч из очереди:', p.id, p.patch); cleaned=true; }
+    return !broken;
   });
   Object.keys(dirtyRows).forEach(id => {
-    INVALID_FIELDS.forEach(f => {
-      if(dirtyRows[id] && f in dirtyRows[id]){ delete dirtyRows[id][f]; cleaned=true; }
+    Object.keys(dirtyRows[id]||{}).forEach(f => {
+      if(!f || INVALID_FIELDS.indexOf(f)>=0){ delete dirtyRows[id][f]; cleaned=true; }
     });
     if(dirtyRows[id] && !Object.keys(dirtyRows[id]).length) delete dirtyRows[id];
   });
@@ -928,13 +931,25 @@ async function flushPending(){
   _pendingWrites = [];
   _savePending();
   for(const item of queue){
+    const keys=Object.keys((item&&item.patch)||{});
+    if(!item||!item.id||!keys.length||keys.some(k=>!k||k==='undefined')){
+      console.log('🧹 Нерабочий патч выброшен, в базу не отправлялся:', item);
+      continue;
+    }
     try{
       const {error} = await sb.from('nastavniki').update(item.patch).eq('id', item.id);
       if(error) throw error;
       clearDirty(item.id, Object.keys(item.patch));
     }catch(e){
+      const msg=(e&&e.message)||'';
+      // Ошибка схемы означает, что патч неверен сам по себе: повторять бессмысленно
+      if(/Could not find|column|schema cache/i.test(msg)){
+        console.warn('🧹 Патч отброшен как неверный:', item.patch, msg);
+        clearDirty(item.id, Object.keys(item.patch));
+        continue;
+      }
       _pendingWrites.push(item);
-      console.warn('❌ Ошибка отправки, вернул в очередь:', e.message);
+      console.warn('❌ Ошибка отправки, вернул в очередь:', msg);
     }
   }
   _savePending();
