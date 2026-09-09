@@ -562,6 +562,19 @@ function paintActor(){
 
 function _val(v){ return (v===null||v===undefined)?null:String(v); }
 
+// Снимок того, что лежит на сервере. Нужен потому, что интерфейс сначала
+// меняет строку в памяти и только потом сохраняет: если брать "было" из
+// самой строки, оно уже равно "стало", и журнал считает, что правки не было.
+let _snapshot={};
+function snapshotRows(list){
+  _snapshot={};
+  (list||[]).forEach(r=>{ _snapshot[r.id]={...r}; });
+}
+function snapshotApply(id,patch){
+  if(!_snapshot[id]) _snapshot[id]={id};
+  Object.assign(_snapshot[id],patch);
+}
+
 async function logChange(rec, changes, source){
   if(!LOG_ON) return;
   const id = rec && rec.id;
@@ -960,8 +973,13 @@ async function safeUpdate(id, patch, el, source){
   const bad=Object.keys(patch||{}).filter(k=>!k||k==='undefined');
   if(bad.length){ console.warn('⛔ Пропущен патч с некорректным полем:',patch); return false; }
   if(!id || !Object.keys(patch||{}).length) return false;
-  const before=rows.find(x=>x.id===id);
-  if(before) logChange(before, patch, source||'hand');
+  const live=rows.find(x=>x.id===id);
+  const before=_snapshot[id] || live;   // "было" — из снимка сервера
+  if(before){
+    const rec={...before, id, name:(live&&live.name)||before.name, crm_id:(live&&live.crm_id)||before.crm_id};
+    logChange(rec, patch, source||'hand');
+  }
+  snapshotApply(id, patch);
   setDirty(id, patch);
 
   if(!navigator.onLine){
@@ -1084,9 +1102,11 @@ async function loadData(force){
 
     if(isBusy()&&!force){
       // Логист печатает — свежие данные кладём в сторону, показываем плашку.
+      snapshotRows(data||[]);
       _staleRows=data||[];
       showStale(true);
     }else{
+      snapshotRows(data||[]);
       rows=applyDirty(data||[]);
       updateNastavnikFilter();
       renderAll();
