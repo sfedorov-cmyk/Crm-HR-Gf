@@ -1137,10 +1137,13 @@ function statusMenuHtml(id,extraStyle){
 // Округ, не подходящий вкладке, красим красным — видно сразу, без отчёта.
 function okrugHtml(r){
   if(!r.okrug) return '—';
-  const tab=OKRUG_TAB[r.okrug];
+  const norm=normOkrug(r.okrug);          // "СПБ : СВ" → "СВ"
+  const tab=OKRUG_TAB[norm];
   const bad = !tab || tab!==r.city;
-  const title = bad ? ' title="Округ не соответствует вкладке или не распознан"' : '';
-  return`<span class="okrug-tag${bad?' bad':''}"${title}>${esc(r.okrug)}</span>`;
+  const title = bad
+    ? ' title="Округ не соответствует вкладке или не распознан"'
+    : (norm!==r.okrug ? ' title="В базе записано: '+esc(r.okrug)+'"' : '');
+  return`<span class="okrug-tag${bad?' bad':''}"${title}>${esc(norm||r.okrug)}</span>`;
 }
 
 // МОБИЛЬНЫЕ КАРТОЧКИ
@@ -1428,7 +1431,7 @@ function buildDash(){
   rows.forEach(r=>{const s=fsState(r);if(s==='approved')fsA++;else if(s==='rejected')fsR++;else fsP++;});
 
   // Записи, у которых округ не соответствует вкладке или не распознан
-  const misrouted=rows.filter(r=>{const t=OKRUG_TAB[r.okrug];return !r.okrug||!t||t!==r.city;}).length;
+  const misrouted=rows.filter(r=>{const t=OKRUG_TAB[normOkrug(r.okrug)];return !r.okrug||!t||t!==r.city;}).length;
 
   html+=`<div style="background:#2d6a4f;color:white;padding:20px;border-radius:8px">
       <div style="font-size:24px;margin-bottom:8px">✓</div>
@@ -2058,8 +2061,10 @@ async function syncFromCRM(force) {
       // Ни округ, ни вкладка, ни наставник, ни статус. Ничего.
       // Если в CRM что-то изменилось — только показываем это человеку.
       if(exist){
-        const needCity  = mapped.city  && exist.city !==mapped.city;
-        const needOkrug = mapped.okrug && exist.okrug!==mapped.okrug;
+        // Сравниваем нормализованно: в старых записях округ лежит сырой
+        // строкой вида "СПБ : СВ", и это тот же самый СВ, а не расхождение.
+        const needCity  = mapped.city  && exist.city !== mapped.city;
+        const needOkrug = mapped.okrug && normOkrug(exist.okrug) !== mapped.okrug;
         if(!needCity && !needOkrug) continue;
         conflicts.push({fio:c.fio, id:exist.id, was:exist.city+' / '+(exist.okrug||'—'),
                         should:mapped.city+' / '+mapped.okrug});
@@ -2118,8 +2123,7 @@ async function syncFromCRM(force) {
       showSyncReport(report);
     }
     if(conflicts.length){
-      console.warn('⚠️ В CRM изменился округ у записей, которые уже заполняли руками. Не тронуты:');
-      conflicts.forEach(c=>console.warn('   '+c.fio+': сейчас '+c.was+', в CRM '+c.should));
+      console.warn('⚠️ Расхождений с CRM: '+conflicts.length+'. Записи не тронуты — см. «📋 Отчёт синка». Список: console.table(window._crmConflicts)');
     }
 
     if(added>0){
